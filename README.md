@@ -1,4 +1,4 @@
-# Automated Certificate Management using AWS Systems Manager (SSM) and IAM Roles Anywhere
+# Automated Certificate Management using AWS Systems Manager (SSM) for IAM Roles Anywhere
 
 ## Description
 This project demonstrates an architectural pattern that uses AWS Private Certificate Authority (PCA) and AWS Systems Manager to automate the issuance and renewal of x509 certificates. This process greatly simplifies the integration of on-premises hosts with IAM Roles Anywhere, enhancing security posture and reducing operational complexity.
