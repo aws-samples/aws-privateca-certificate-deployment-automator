@@ -22,6 +22,8 @@ The solution comprises multiple stages involving various AWS services:
 8. The 'Run Command' tests the certificate's functionality, stores the signed certificate on the instance upon success.
 9. The Lambda function updates the certificate's expiry date in the DynamoDB table.
 
+![Diagram](./diagram.png)
+
 ## Installation
 ### Clone the repository
 `git clone git@github.com:aws-samples/aws-privateca-certifciate-deployment-automator.git`
