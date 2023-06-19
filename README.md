@@ -40,7 +40,7 @@ The solution comprises multiple stages involving various AWS services:
 After deployment, add the hosts that require certificate management into the DynamoDB table manually.
 
 ## Usage
-The CertCheck Lambda function created by the CloudFormation template will run daily to ensure the certificates for the hosts are kept up-to-date. If necessary, you can use the pre-created test event to run the Lambda function on-demand.
+The CertCheck Lambda function created by the CloudFormation template will run daily to ensure the certificates for the hosts are kept up-to-date. If necessary, you can use the AWS cli to run the Lambda function on-demand.
 `aws lambda invoke --function-name CertCheck-Trigger --payload '{ "key": "value" }' --cli-binary-format raw-in-base64-out response.json`
 
 ## Validation
