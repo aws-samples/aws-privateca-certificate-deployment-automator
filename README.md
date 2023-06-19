@@ -24,7 +24,7 @@ The solution comprises multiple stages involving various AWS services:
 
 ## Installation
 ### Clone the repository
-`git clone <repository_link>`
+`git clone git@github.com:aws-samples/aws-privateca-certifciate-deployment-automator.git`
 
 ### Navigate to the cloned repository
 `cd <repository_directory>`
