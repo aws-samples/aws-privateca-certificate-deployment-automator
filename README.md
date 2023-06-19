@@ -27,7 +27,7 @@ The solution comprises multiple stages involving various AWS services:
 `git clone git@github.com:aws-samples/aws-privateca-certifciate-deployment-automator.git`
 
 ### Navigate to the cloned repository
-`cd <repository_directory>`
+`cd aws-privateca-certifciate-deployment-automator`
 
 ### Run the cloudformation package command
 `aws cloudformation package --template-file cf_template.yaml --s3-bucket <bucket_name> --output-template-file packaged.yaml`
