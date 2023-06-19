@@ -41,8 +41,6 @@ def lambda_handler(event, context):
         if not re.match(pattern, ca_arn) or not re.match(pattern, cert_arn):
             raise ValueError("Invalid ARN format")
         
-        # Log ARNs
-        logger.info(f"CA ARN: {ca_arn}, Cert ARN: {cert_arn}")
 
         # Request the certificate from the Certificate Manager
         response = PCA.get_certificate(
@@ -53,9 +51,6 @@ def lambda_handler(event, context):
         # Extract certificate and its chain from the response
         ca_certificate = response["CertificateChain"]
         certificate = response["Certificate"]
-
-        # Log certificate details
-        logger.info(f"Certificate details: {certificate}")
 
         # Convert certificate to bytes, then load to x509 format
         cert_bytes = certificate.encode('utf-8')
