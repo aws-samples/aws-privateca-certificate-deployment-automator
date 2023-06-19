@@ -1,0 +1,389 @@
+Resources:
+  # Schedule resource for triggering Lambda
+  Schedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Description: 'Schedule to when the Lambda will run'
+      FlexibleTimeWindow:
+        MaximumWindowInMinutes: 15
+        Mode: FLEXIBLE
+      ScheduleExpression: 'cron(15 15 * * ? *)'
+      Target:
+        Arn: !GetAtt CertTriggerLambda.Arn
+        RoleArn: !GetAtt EventBridgeSchedulerRole.Arn
+      State: 'ENABLED'
+      Name: 'DailyCertCheckSchedule'
+
+  # IAM role for testing IAM Roles Anywhere
+  IAMRARole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: IAMRA-Role
+      Description: 'Sample role to test IAM Roles Anywhere'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'rolesanywhere.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+              - 'sts:TagSession'
+              - 'sts:SetSourceIdentity'
+      Policies:
+        - PolicyName: DenyAll
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Deny
+                Action: '*'
+                Resource: '*'
+
+  # IAM role for CertTriggerLambda
+  CertTriggerLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub LAMBDA-CertTriggerRole-${AWS::StackName}
+      Description: 'Role for Lambdas that need to look in DynamoDB for certificates'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'lambda.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: !Sub LAMBDA-CertTrigger-Policy-${AWS::StackName}
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'lambda:InvokeFunction'
+                  - 'dynamodb:PartiQLSelect'
+                Resource:
+                  - !GetAtt CertIssueLambda.Arn
+                  - !GetAtt DynamoDBCertificateTable.Arn
+
+    # IAM role for CertIssueLambda
+  CertIssueLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub LAMBDA-CertIssueRole-${AWS::StackName}
+      Description: 'Role for Lambdas that need to issue certificates'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'lambda.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: !Sub LAMBDA-CertIssue-Policy-${AWS::StackName}
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:SendCommand'
+                  - 'ssm:GetCommandInvocation'
+                  - 'dynamodb:PutItem'
+                  - 'acm-pca:IssueCertificate'
+                Resource:
+                  - !GetAtt DynamoDBCertificateTable.Arn
+                  - !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:*'
+                  - !Sub 'arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript'
+                  - !GetAtt PCA.Arn
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:*'
+
+  # IAM role for CertDeployLambda
+  CertDeployLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub LAMBDA-CertDeployRole-${AWS::StackName}
+      Description: 'Role for Lambdas that need to deploy certificates'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'lambda.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: !Sub LAMBDA-CertDeploy-Policy-${AWS::StackName}
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'acm-pca:GetCertificate'
+                  - 'dynamodb:UpdateItem'
+                  - 'ssm:SendCommand'
+                  - 'ssm:GetCommandInvocation'
+                Resource:
+                  - !GetAtt PCA.Arn
+                  - !GetAtt DynamoDBCertificateTable.Arn
+                  - !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:*'
+                  - !Sub 'arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript'
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:*'
+
+  # IAM role for EventBridge Scheduler rule
+  EventBridgeSchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub Amazon_EventBridge_Scheduler_LAMBDA-${AWS::StackName}
+      Description: 'Role for EventBridge Scheduler rule to target Lambda'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'scheduler.amazonaws.com'
+            Action: 'sts:AssumeRole'
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref 'AWS::AccountId'
+                'aws:SourceArn': !Sub 'arn:aws:scheduler:${AWS::Region}:${AWS::AccountId}:schedule/default/DailyCertCheckSchedule'
+      Policies:
+        - PolicyName: !Sub Amazon-EventBridge-Scheduler-Execution-Policy-${AWS::StackName}
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'lambda:InvokeFunction'
+                Resource: !GetAtt CertTriggerLambda.Arn
+
+  # Lambda function for CertTrigger
+  CertTriggerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt CertTriggerLambdaRole.Arn
+      FunctionName: 'CertCheck-Trigger'
+      Runtime: 'python3.9'
+      Handler: 'certCheck.lambda_handler'
+      Code: certCheck
+      Environment:
+        Variables:
+          AWSREGION: !Ref 'AWS::Region'
+          LAMBDA_CERT_ISSUE_ARN: !GetAtt CertIssueLambda.Arn
+
+  # Lambda function for CertIssue
+  CertIssueLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt CertIssueLambdaRole.Arn
+      FunctionName: 'CertIssue'
+      Runtime: 'python3.9'
+      Handler: 'certIssue.lambda_handler'
+      Code: certIssue
+      Environment:
+        Variables:
+          SigningAlgorithm: !Ref SigningAlgorithm
+          PCAarn: !GetAtt PCA.Arn
+          KeyPath: !Ref KeyPath
+          CSRPath: !Ref CSRPath
+
+  # Lambda function for CertDeploy
+  CertDeployLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt CertDeployLambdaRole.Arn
+      FunctionName: 'CertDeploy'
+      Runtime: 'python3.10'
+      Handler: 'certDeploy.lambda_handler'
+      Layers:
+        - !Ref CryptographyLambdaLayer
+      Code: certDeploy
+      Timeout: 5
+      Environment:
+        Variables:
+          CertPath: !Ref CertPath
+          CACertPath: !Ref CACertPath
+          KeyPath: !Ref KeyPath
+          IAMRATrustAnchorARN: !GetAtt IAMRATA.TrustAnchorArn
+          IAMRAProfileARN: !GetAtt IAMRAProfile1.ProfileArn
+          IAMRARoleARN: !GetAtt IAMRARole.Arn
+          AWSSigningHelperPath: !Ref AWSSigningHelperPath
+
+  # Permission for EventBridge to invoke CertDeployLambda
+  CertDeployLambdaPolicy:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt CertDeployLambda.Arn
+      Action: 'lambda:InvokeFunction'
+      Principal: 'events.amazonaws.com'
+      SourceArn: !GetAtt EventBridgeRule.Arn
+
+  # Lambda Layer for cryptography
+  CryptographyLambdaLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: 'cryptography'
+      CompatibleArchitectures:
+        - x86_64
+      CompatibleRuntimes:
+        - python3.10
+      Content: lambda-layer.zip
+
+  # DynamoDB table for storing certificates
+  DynamoDBCertificateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: 'certificates'
+      AttributeDefinitions:
+        - AttributeName: 'hostID'
+          AttributeType: 'S'
+      BillingMode: 'PAY_PER_REQUEST'
+      KeySchema:
+        - AttributeName: 'hostID'
+          KeyType: 'HASH'
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # ACM PCA Certificate Authority
+  PCA:
+    Type: AWS::ACMPCA::CertificateAuthority
+    Properties:
+      Type: 'ROOT'
+      UsageMode: 'SHORT_LIVED_CERTIFICATE'
+      SigningAlgorithm: !Ref SigningAlgorithm
+      KeyAlgorithm: !Ref KeyAlgorithm
+      Subject:
+        Country: !Ref CACountry
+        Organization: !Ref OrgName
+        CommonName: !Ref CACommonName
+
+  # ACM PCA Certificate
+  PCACert:
+    Type: AWS::ACMPCA::Certificate
+    Properties:
+      CertificateAuthorityArn: !GetAtt PCA.Arn
+      CertificateSigningRequest: !GetAtt PCA.CertificateSigningRequest
+      SigningAlgorithm: !Ref SigningAlgorithm
+      TemplateArn: 'arn:aws:acm-pca:::template/RootCACertificate/V1'
+      Validity:
+        Type: 'YEARS'
+        Value: !Ref CACertValidity
+
+  # Activation for PCA Certificate Authority
+  PCAActivation:
+    Type: AWS::ACMPCA::CertificateAuthorityActivation
+    Properties:
+      CertificateAuthorityArn: !GetAtt PCA.Arn
+      Certificate: !GetAtt PCACert.Certificate
+      Status: 'ACTIVE'
+
+  # IAM Roles Anywhere Trust Anchor
+  IAMRATA:
+    Type: AWS::RolesAnywhere::TrustAnchor
+    Properties:
+      Enabled: true
+      Name: IAMRA-TA1
+      Source:
+        SourceType: AWS_ACM_PCA
+        SourceData:
+          AcmPcaArn: !GetAtt PCA.Arn
+    DependsOn: PCAActivation
+
+  # IAM Roles Anywhere Profile
+  IAMRAProfile1:
+    Type: AWS::RolesAnywhere::Profile
+    Properties:
+      DurationSeconds: 900
+      Enabled: true
+      Name: IAMRA-Profile
+      RequireInstanceProperties: false
+      RoleArns:
+        - !GetAtt IAMRARole.Arn
+
+  # EventBridge Rule for PCA certificate issuance
+  EventBridgeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub PCA-issue-certificate-${AWS::StackName}
+      EventPattern: !Sub '{"source":["aws.acm-pca"],"detail-type":["ACM Private CA Certificate Issuance"],"resources":["${PCA.Arn}"]}'
+      Targets:
+        - Arn: !GetAtt CertDeployLambda.Arn
+          Id: Id-EventBridge-Target
+
+Parameters:
+  SigningAlgorithm:
+    Type: String
+    Default: SHA256WITHRSA
+    AllowedValues:
+      - SHA256WITHECDSA
+      - SHA256WITHRSA
+      - SHA384WITHECDSA
+      - SHA384WITHRSA
+      - SHA512WITHECDSA
+      - SHA512WITHRSA
+    Description: Enter a signing algorithm. Default is SHA256WITHRSA.
+  KeyAlgorithm:
+    Type: String
+    Default: RSA_2048
+    AllowedValues:
+      - RSA_2048
+      - EC_prime256v1
+      - EC_secp384r1
+      - RSA_4096
+    Description: Enter a key algorithm. Default is RSA_2048.
+  CACountry:
+    Type: String
+    Default: US
+    Description: Enter the country for the subject of the CA.
+  OrgName:
+    Type: String
+    Default: 'Example Corp'
+    Description: Enter the organization name for the subject of the CA.
+  CACommonName:
+    Type: String
+    Default: 'pca.example.com'
+    Description: Enter the common name for the subject of the CA.
+  CACertValidity:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    Description: Enter the number of years the CA certificate is valid for.
+  CertPath:
+    Type: String
+    Default: /root
+    Description: Path on the filesystem to store the certificate.
+  CACertPath:
+    Type: String
+    Default: /root
+    Description: Path on the filesystem to store the CA certificate.
+  KeyPath:
+    Type: String
+    Default: /root
+    Description: Path on the filesystem to store private key.
+  CSRPath:
+    Type: String
+    Default: /root
+    Description: Path on the filesystem to store CSR.
+  AWSSigningHelperPath:
+    Type: String
+    Default: /root
+    Description: Path on the filesystem where the aws_signing_helper is located.
+
+Outputs:
+  IAMRATrustAnchorARN:
+    Description: Arn of the created trust IAMRA Trust Anchor.
+    Value: !GetAtt IAMRATA.TrustAnchorArn
+    Export:
+      Name: IAMRATrustAnchorARN
+  IAMRAProfileARN:
+    Description: Arn of the created trust IAMRA profile.
+    Value: !GetAtt IAMRAProfile1.ProfileArn
+    Export:
+      Name: IAMRAProfileARN
+  IAMRARoleARN:
+    Description: Arn of the sample IAMRA role.
+    Value: !GetAtt IAMRARole.Arn
+    Export:
+      Name: IAMRARoleARN
