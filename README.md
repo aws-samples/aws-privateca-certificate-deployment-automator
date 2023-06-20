@@ -58,10 +58,6 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 
 This project uses the [cryptography](https://cryptography.io/en/latest/) library, which is licensed under the Apache License, Version 2.0 and the BSD 3-Clause License. The cryptography library and its licensing information can be found at its [PyPi page](https://pypi.org/project/cryptography/) and its [GitHub repository](https://github.com/pyca/cryptography).
 
-### AWS Lambda Layer
-
-The AWS Lambda Layer used in this project includes the cryptography library. This library retains its original licensing, which is the Apache License, Version 2.0 and the BSD 3-Clause License. Please see the respective licenses for more information.
-
 
 
 
