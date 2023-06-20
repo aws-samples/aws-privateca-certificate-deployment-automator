@@ -1,13 +1,7 @@
 # Automated Certificate Management using AWS Systems Manager (SSM) for IAM Roles Anywhere
 
 ## Description
-This project demonstrates an architectural pattern that uses AWS Private Certificate Authority (PCA) and AWS Systems Manager to automate the issuance and renewal of x509 certificates. This process greatly simplifies the integration of on-premises hosts with IAM Roles Anywhere, enhancing security posture and reducing operational complexity.
-
-
-## Background
-IAM Roles Anywhere is a feature that provides a secure and manageable authentication method for applications or systems running outside of AWS. These applications can now exchange x509 certificates for temporary IAM credentials from AWS Security Token Service (STS) to assume an AWS IAM Role.
-
-The architectural pattern proposed by this project allows automated management of these certificates, effectively dealing with the certificate lifecycle. The solution is primarily designed for a Linux environment.
+This project provides an architectural pattern and sample code for automating the certificate lifecycle from AWS Private Certificate Authority (PCA) using AWS Systems Manager. This process greatly simplifies the integration of AWS Private Certificate Authority with IAM Roles Anywhere.
 
 ## Architecture
 The solution comprises multiple stages involving various AWS services:
@@ -37,14 +31,11 @@ The solution comprises multiple stages involving various AWS services:
 ### Deploy the CloudFormation stack
 `aws cloudformation deploy --template packaged.yaml --stack-name SSM-PCA-Stack --capabilities CAPABILITY_NAMED_IAM --parameter-overrides "CertPath=/tmp" "CACertPath=/tmp" "CSRPath=/tmp" "KeyPath=/tmp"`
 
-After deployment, add the hosts that require certificate management into the DynamoDB table manually.
+After deployment, add the hostID from Systems Manager for hosts that require certificate management into the created DynamoDB table.
 
 ## Usage
 The CertCheck Lambda function created by the CloudFormation template will run daily to ensure the certificates for the hosts are kept up-to-date. If necessary, you can use the AWS cli to run the Lambda function on-demand.
 `aws lambda invoke --function-name CertCheck-Trigger --payload '{ "key": "value" }' --cli-binary-format raw-in-base64-out response.json`
-
-## Validation
-To validate successful certificate deployment, check the specified location in the CloudFormation parameter. You should find four files: the certificate containing the public key signed by AWS PCA, the certificate chain, the private key for the certificate, and the CSR used to generate the PCA-signed certificate.
 
 ## Security
 
