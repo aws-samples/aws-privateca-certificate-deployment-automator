@@ -124,6 +124,7 @@ Resources:
                 Action:
                   - 'acm-pca:GetCertificate'
                   - 'dynamodb:UpdateItem'
+                  - 'dynamodb:GetItem'
                   - 'ssm:SendCommand'
                   - 'ssm:GetCommandInvocation'
                 Resource:
@@ -172,6 +173,8 @@ Resources:
         Variables:
           AWSREGION: !Ref 'AWS::Region'
           LAMBDA_CERT_ISSUE_ARN: !GetAtt CertIssueLambda.Arn
+          DEFAULT_CERT_PATH: !Ref CertPath
+          DEFAULT_KEY_PATH: !Ref KeyPath
 
   # Lambda function for CertIssue
   CertIssueLambda:
@@ -186,8 +189,7 @@ Resources:
         Variables:
           SigningAlgorithm: !Ref SigningAlgorithm
           PCAarn: !GetAtt PCA.Arn
-          KeyPath: !Ref KeyPath
-          CSRPath: !Ref CSRPath
+          CSR_PATH: !Ref CSRPath
 
   # Lambda function for CertDeploy
   CertDeployLambda:
@@ -203,13 +205,13 @@ Resources:
       Timeout: 5
       Environment:
         Variables:
-          CertPath: !Ref CertPath
-          CACertPath: !Ref CACertPath
-          KeyPath: !Ref KeyPath
+          DEFAULT_CACERT_PATH: !Ref CACertPath
+          DEFAULT_CERT_PATH: !Ref CertPath
+          DEFAULT_KEY_PATH: !Ref KeyPath
           IAMRATrustAnchorARN: !GetAtt IAMRATA.TrustAnchorArn
           IAMRAProfileARN: !GetAtt IAMRAProfile1.ProfileArn
           IAMRARoleARN: !GetAtt IAMRARole.Arn
-          AWSSigningHelperPath: !Ref AWSSigningHelperPath
+          DEFAULT_AWSSigningHelperPath: !Ref AWSSigningHelperPath
 
   # Permission for EventBridge to invoke CertDeployLambda
   CertDeployLambdaPolicy:
@@ -364,7 +366,7 @@ Parameters:
     Description: Path on the filesystem to store private key.
   CSRPath:
     Type: String
-    Default: /root
+    Default: /tmp
     Description: Path on the filesystem to store CSR.
   AWSSigningHelperPath:
     Type: String

@@ -17,22 +17,23 @@ logger.setLevel(logging.INFO)
 # Get environment variables
 SigningAlgorithm = os.environ['SigningAlgorithm']
 PCAarn = os.environ['PCAarn']
-KeyPath = os.environ['KeyPath']
-CSRPath = os.environ['CSRPath']
+csr_path = os.environ['CSR_PATH']
 
 def lambda_handler(event, context):
     try:
-        # Extract hostID from the event
+        # Extract hostID, certPath, and keyPath from the event
         host = event["hostID"]
-
+        cert_path = event["certPath"]
+        key_path = event["keyPath"]
+        
         # Sanitize the host input
         host = re.sub('[^0-9a-zA-Z\-]+', '', host)
 
         # Construct the SSM command
         commands = [
             '#!/bin/bash',
-            f'openssl req -nodes -newkey rsa:2048 -keyout "{KeyPath}/{host}-new.key" -out "{CSRPath}/{host}.csr" -subj "/CN={host}"',
-            f'cat "{CSRPath}/{host}.csr"',
+            f'openssl req -nodes -newkey rsa:2048 -keyout "{key_path}/{host}-new.key" -out "{csr_path}/{host}.csr" -subj "/CN={host}"',
+            f'cat "{csr_path}/{host}.csr"',
         ]
         command_str = '\n'.join(commands)
 

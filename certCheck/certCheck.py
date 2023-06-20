@@ -13,18 +13,25 @@ def lambda_handler(event, context):
 
     # Instantiate AWS services clients
     dynamodb = boto3.client('dynamodb', region_name=os.environ['AWSREGION'])
-    lmb = boto3.client('lambda')
 
     try:
-        # Retrieve environment variable
+        # Retrieve environment variables
         lambda_cert_issue_arn = os.environ.get('LAMBDA_CERT_ISSUE_ARN')
-        if not lambda_cert_issue_arn:
-            raise ValueError("Environment variable 'LAMBDA_CERT_ISSUE_ARN' not found.")
+        default_cert_path = os.environ.get('DEFAULT_CERT_PATH')
+        default_key_path = os.environ.get('DEFAULT_KEY_PATH')
+        if not lambda_cert_issue_arn or not default_cert_path or not default_key_path:
+            raise ValueError("Required environment variables not found.")
 
         # Execute DynamoDB statement to retrieve certificates
-        response = dynamodb.execute_statement(Statement='SELECT hostID, expiry FROM certificates')
+        response = dynamodb.execute_statement(Statement='SELECT hostID, expiry, certPath, keyPath FROM certificates')
+
+
 
         for item in response["Items"]:
+            host_id = item["hostID"]["S"]    
+            cert_path = item["certPath"]["S"] if item.get("certPath", {}).get("S", '') else default_cert_path
+            key_path = item["keyPath"]["S"] if item.get("keyPath", {}).get("S", '') else default_key_path
+
             if "expiry" in item and len(item["expiry"]["S"]) != 0:
                 today = datetime.now()
                 future_date = today + timedelta(days=2)
@@ -32,36 +39,33 @@ def lambda_handler(event, context):
                 expiry_date = datetime.strptime(item["expiry"]["S"], "%Y-%m-%d %H:%M:%S")
 
                 if expiry_date <= today:
-                    host_id = item["hostID"]["S"]
                     logger.info(f"Certificate for host {host_id} has expired and needs to be reissued")
-                    lmb.invoke(
-                        FunctionName=lambda_cert_issue_arn,
-                        InvocationType='Event',
-                        Payload=json.dumps({"hostID": host_id})
-                    )
-                    logger.info(f"Invoked the certificate issue lambda for host: {host_id}")
                 elif expiry_date <= future_date:
-                    host_id = item["hostID"]["S"]
                     days_until_expiry = (expiry_date - today).days
                     logger.info(f"Certificate for host {host_id} is expiring soon ({days_until_expiry} days). It needs to be reissued")
-                    lmb.invoke(
-                        FunctionName=lambda_cert_issue_arn,
-                        InvocationType='Event',
-                        Payload=json.dumps({"hostID": host_id})
-                    )
-                    logger.info(f"Invoked the certificate issue lambda for host: {host_id}")
                 else:
-                    host_id = item["hostID"]["S"]
                     logger.info(f"Certificate for host {host_id} is valid and does not need to be reissued")
+                    continue  # Skip the rest of the loop for valid certificates
+
             else:
-                host_id = item["hostID"]["S"]
                 logger.info(f"No expiry found for host: {host_id}. A certificate will be issued.")
-                lmb.invoke(
-                    FunctionName=lambda_cert_issue_arn,
-                    InvocationType='Event',
-                    Payload=json.dumps({"hostID": host_id})
-                )
-                logger.info(f"Invoked the certificate issue lambda for host: {host_id}")
+            
+            issue_certificate(lambda_cert_issue_arn, host_id, cert_path, key_path)
+            
     except Exception as e:
         logger.error("An error occurred: ", exc_info=True)
         raise e
+
+
+def issue_certificate(lambda_cert_issue_arn, host_id, cert_path, key_path):
+    lmb = boto3.client('lambda')
+    lmb.invoke(
+        FunctionName=lambda_cert_issue_arn,
+        InvocationType='Event',
+        Payload=json.dumps({
+            "hostID": host_id,
+            "certPath": cert_path,
+            "keyPath": key_path
+        })
+    )
+    logger.info(f"Invoked the certificate issue lambda for host: {host_id}")

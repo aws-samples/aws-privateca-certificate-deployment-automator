@@ -21,13 +21,13 @@ def lambda_handler(event, context):
         DYNAMODB = boto3.resource('dynamodb')
 
         # Get environment variables
-        CERT_PATH = os.getenv('CertPath')
-        CA_CERT_PATH = os.getenv('CACertPath')
-        KEY_PATH = os.getenv('KeyPath')
+        DEFAULT_CACERT_PATH = os.getenv('DEFAULT_CACERT_PATH')
+        DEFAULT_CERT_PATH = os.getenv('DEFAULT_CERT_PATH')
+        DEFAULT_KEY_PATH = os.getenv('DEFAULT_KEY_PATH')
         IAM_RA_PROFILE_ARN = os.getenv('IAMRAProfileARN')
         IAM_RA_ROLE_ARN = os.getenv('IAMRARoleARN')
         IAM_RA_TRUST_ANCHOR_ARN = os.getenv('IAMRATrustAnchorARN')
-        AWS_SIGNING_HELPER_PATH = os.getenv('AWSSigningHelperPath') 
+        DEFAULT_AWS_SIGNING_HELPER_PATH = os.getenv('DEFAULT_AWSSigningHelperPath') 
 
         # Log the incoming event
         logger.info(f"Incoming Event : {json.dumps(event)}")
@@ -65,6 +65,20 @@ def lambda_handler(event, context):
         # Log extracted details
         logger.info(f"Extracted details - Common Name: {common_name}, Serial: {serial}, Expiry: {expiry}")
 
+        # Get certPath and keyPath from DynamoDB
+        table = DYNAMODB.Table('certificates')
+        response = table.get_item(
+            Key={
+                'hostID': common_name
+            }
+        )
+        item = response['Item']
+        logger.info(f"DynamoDB Item: {item}")
+        cert_path = item['certPath'] if item['certPath'] else DEFAULT_CERT_PATH
+        key_path = item['keyPath'] if item['keyPath'] else DEFAULT_KEY_PATH
+        cacert_path = item['cacertPath'] if item['cacertPath'] else DEFAULT_CACERT_PATH
+        AWSSigningHelperPath = item['signinghelperPath'] if item['signinghelperPath'] else DEFAULT_AWS_SIGNING_HELPER_PATH
+
         # Send the certificate to instances via the Simple Systems Manager (SSM)
         response = SSM.send_command(
             Targets=[{'Key': 'InstanceIDs', 'Values': [common_name]}],
@@ -76,11 +90,11 @@ def lambda_handler(event, context):
             Comment=f'Pushing cert for {common_name}',
             Parameters={
                 'commands': [
-                    f'echo "{certificate}" > {CERT_PATH}/{common_name}-new.crt',
-                    f'echo "{ca_certificate}" > {CA_CERT_PATH}/ca_chain_certificate.crt',
-                    f'if [ ! -f {AWS_SIGNING_HELPER_PATH}/aws_signing_helper ]; then echo "{AWS_SIGNING_HELPER_PATH}/aws_signing_helper not found" >&2; exit 1; fi',
-                    f'{AWS_SIGNING_HELPER_PATH}/aws_signing_helper credential-process --certificate {CERT_PATH}/{common_name}-new.crt --intermediates {CA_CERT_PATH}/ca_chain_certificate.crt --private-key {KEY_PATH}/{common_name}-new.key --profile-arn {IAM_RA_PROFILE_ARN} --role-arn {IAM_RA_ROLE_ARN} --trust-anchor-arn {IAM_RA_TRUST_ANCHOR_ARN} | grep -q "Expiration"',
-                    f'if [ $? -eq 0 ]; then mv {CERT_PATH}/{common_name}-new.crt {CERT_PATH}/{common_name}.crt && mv {KEY_PATH}/{common_name}-new.key {KEY_PATH}/{common_name}.key; else exit 1; fi',
+                    f'echo "{certificate}" > {cert_path}/{common_name}-new.crt',
+                    f'echo "{ca_certificate}" > {cacert_path}/ca_chain_certificate.crt',
+                    f'if [ ! -f {AWSSigningHelperPath}/aws_signing_helper ]; then echo "{AWSSigningHelperPath}/aws_signing_helper not found" >&2; exit 1; fi',
+                    f'{AWSSigningHelperPath}/aws_signing_helper credential-process --certificate {cert_path}/{common_name}-new.crt --intermediates {cacert_path}/ca_chain_certificate.crt --private-key {key_path}/{common_name}-new.key --profile-arn {IAM_RA_PROFILE_ARN} --role-arn {IAM_RA_ROLE_ARN} --trust-anchor-arn {IAM_RA_TRUST_ANCHOR_ARN} | grep -q "Expiration"',
+                    f'if [ $? -eq 0 ]; then mv {cert_path}/{common_name}-new.crt {cert_path}/{common_name}.crt && mv {key_path}/{common_name}-new.key {key_path}/{common_name}.key; else exit 1; fi',
                 ]
             }
         )
