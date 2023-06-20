@@ -56,7 +56,13 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 
 ## Third Party Libraries
 
-This project uses the [cryptography](https://cryptography.io/en/latest/) library, which is licensed under the Apache License, Version 2.0 and the BSD 3-Clause License. The cryptography library and its licensing information can be found at its [PyPi page](https://pypi.org/project/cryptography/) and its [GitHub repository](https://github.com/pyca/cryptography).
+This project uses the following libraries in the Lambda layer:
+
+- [cryptography](https://cryptography.io/en/latest/), licensed under the Apache License, Version 2.0 and the BSD 3-Clause License. See the [PyPi page](https://pypi.org/project/cryptography/) and the [GitHub repository](https://github.com/pyca/cryptography) for more information.
+
+- [cffi](https://cffi.readthedocs.io/en/latest/), licensed under the MIT License. See the [PyPi page](https://pypi.org/project/cffi/) and the [GitHub repository](https://github.com/cffi/cffi) for more information.
+
+- [pycparser](https://github.com/eliben/pycparser), licensed under the BSD License. See the [PyPi page](https://pypi.org/project/pycparser/) and the [GitHub repository](https://github.com/eliben/pycparser) for more information.
 
 
 
