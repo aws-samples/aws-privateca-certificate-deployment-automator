@@ -50,7 +50,17 @@ To validate successful certificate deployment, check the specified location in t
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
 
-## License
+# License
 
-This library is licensed under the MIT-0 License. See the LICENSE file.
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+
+## Third Party Libraries
+
+This project uses the [cryptography](https://cryptography.io/en/latest/) library which is licensed under the Apache License, Version 2.0 and the BSD 3-Clause License. The cryptography library and its licensing information can be found at [https://github.com/pyca/cryptography](https://github.com/pyca/cryptography).
+
+### AWS Lambda Layer
+
+The AWS Lambda Layer used in this project includes the cryptography library. This library retains its original licensing, which is the Apache License, Version 2.0 and the BSD 3-Clause License. Please see the respective licenses for more information.
+
+
 
