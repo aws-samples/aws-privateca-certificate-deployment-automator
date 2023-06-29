@@ -74,10 +74,11 @@ def lambda_handler(event, context):
         )
         item = response['Item']
         logger.info(f"DynamoDB Item: {item}")
-        cert_path = item['certPath'] if item['certPath'] else DEFAULT_CERT_PATH
-        key_path = item['keyPath'] if item['keyPath'] else DEFAULT_KEY_PATH
-        cacert_path = item['cacertPath'] if item['cacertPath'] else DEFAULT_CACERT_PATH
-        AWSSigningHelperPath = item['signinghelperPath'] if item['signinghelperPath'] else DEFAULT_AWS_SIGNING_HELPER_PATH
+        cacert_path = item.get('cacertPath') if item.get('cacertPath') else DEFAULT_CACERT_PATH
+        key_path = item.get('keyPath') if item.get('keyPath') else DEFAULT_KEY_PATH
+        cert_path = item.get('certPath') if item.get('certPath') else DEFAULT_CERT_PATH
+        AWSSigningHelperPath = item.get('signinghelperPath') if item.get('signinghelperPath') else DEFAULT_AWS_SIGNING_HELPER_PATH
+
 
         # Send the certificate to instances via the Simple Systems Manager (SSM)
         response = SSM.send_command(
