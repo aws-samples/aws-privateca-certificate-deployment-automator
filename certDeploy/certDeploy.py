@@ -74,10 +74,19 @@ def lambda_handler(event, context):
         )
         item = response['Item']
         logger.info(f"DynamoDB Item: {item}")
-        cacert_path = item.get('cacertPath') if item.get('cacertPath') else DEFAULT_CACERT_PATH
-        key_path = item.get('keyPath') if item.get('keyPath') else DEFAULT_KEY_PATH
-        cert_path = item.get('certPath') if item.get('certPath') else DEFAULT_CERT_PATH
-        AWSSigningHelperPath = item.get('signinghelperPath') if item.get('signinghelperPath') else DEFAULT_AWS_SIGNING_HELPER_PATH
+        
+        # Use default paths if the ones from DynamoDB are empty
+        cacert_path = item.get('cacertPath') or DEFAULT_CACERT_PATH
+        key_path = item.get('keyPath') or DEFAULT_KEY_PATH
+        cert_path = item.get('certPath') or DEFAULT_CERT_PATH
+        AWSSigningHelperPath = item.get('signinghelperPath') or DEFAULT_AWS_SIGNING_HELPER_PATH
+        
+        # Add logging to check the values being used
+        logger.info(f"Using cacert_path: {cacert_path}")
+        logger.info(f"Using key_path: {key_path}")
+        logger.info(f"Using cert_path: {cert_path}")
+        logger.info(f"Using AWSSigningHelperPath: {AWSSigningHelperPath}")
+
 
 
         # Send the certificate to instances via the Simple Systems Manager (SSM)
@@ -118,6 +127,11 @@ def lambda_handler(event, context):
                 InstanceId=common_name,
             )
             command_status = response.get('Status', 'Status not found in response')
+            
+        # Log the command status and the output
+        command_output = response.get('StandardOutputContent', 'Output not found in response')
+        logger.info(f"SSM Command Status: {command_status}")
+        logger.info(f"SSM Command Output: {command_output}")
 
         # If the command didn't succeed, raise an error
         if command_status != 'Success':

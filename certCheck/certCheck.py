@@ -19,19 +19,22 @@ def lambda_handler(event, context):
         lambda_cert_issue_arn = os.environ.get('LAMBDA_CERT_ISSUE_ARN')
         default_cert_path = os.environ.get('DEFAULT_CERT_PATH')
         default_key_path = os.environ.get('DEFAULT_KEY_PATH')
+        
+        # Ensure the required environment variables are present
         if not lambda_cert_issue_arn or not default_cert_path or not default_key_path:
             raise ValueError("Required environment variables not found.")
-
+        
         # Execute DynamoDB statement to retrieve certificates
         response = dynamodb.execute_statement(Statement='SELECT hostID, expiry, certPath, keyPath FROM certificates')
 
-
-
+        # Loop through the items retrieved from DynamoDB
         for item in response["Items"]:
-            host_id = item["hostID"]["S"]    
-            cert_path = item["certPath"]["S"] if item.get("certPath", {}).get("S", '') else default_cert_path
-            key_path = item["keyPath"]["S"] if item.get("keyPath", {}).get("S", '') else default_key_path
+            host_id = item.get("hostID", {}).get("S")
+            cert_path = item.get("certPath", {}).get("S") or default_cert_path
+            key_path = item.get("keyPath", {}).get("S") or default_key_path
 
+            reissue_certificate = False
+            
             if "expiry" in item and len(item["expiry"]["S"]) != 0:
                 today = datetime.now()
                 future_date = today + timedelta(days=2)
@@ -40,18 +43,22 @@ def lambda_handler(event, context):
 
                 if expiry_date <= today:
                     logger.info(f"Certificate for host {host_id} has expired and needs to be reissued")
+                    reissue_certificate = True
                 elif expiry_date <= future_date:
                     days_until_expiry = (expiry_date - today).days
                     logger.info(f"Certificate for host {host_id} is expiring soon ({days_until_expiry} days). It needs to be reissued")
+                    reissue_certificate = True
                 else:
                     logger.info(f"Certificate for host {host_id} is valid and does not need to be reissued")
                     continue  # Skip the rest of the loop for valid certificates
 
             else:
                 logger.info(f"No expiry found for host: {host_id}. A certificate will be issued.")
+                reissue_certificate = True
             
-            issue_certificate(lambda_cert_issue_arn, host_id, cert_path, key_path)
-            
+            if reissue_certificate:
+                issue_certificate(lambda_cert_issue_arn, host_id, cert_path, key_path)
+                
     except Exception as e:
         logger.error("An error occurred: ", exc_info=True)
         raise e

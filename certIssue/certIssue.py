@@ -21,6 +21,8 @@ csr_path = os.environ['CSR_PATH']
 
 def lambda_handler(event, context):
     try:
+        logger.info(f"Incoming event: {event}")
+
         # Extract hostID, certPath, and keyPath from the event
         host = event["hostID"]
         cert_path = event["certPath"]
