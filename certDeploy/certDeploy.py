@@ -160,5 +160,15 @@ def lambda_handler(event, context):
     except Exception as e:
         # Print and raise any exceptions that occurred during execution
         error_message = f"An error occurred: {str(e)}, traceback: {traceback.format_exc()}"
+        send_sns_alert(f"Certificate rotation failed for {common_name}: {e}")
         logger.error(error_message)
         raise RuntimeError(error_message)
+    
+def send_sns_alert(message):
+    sns = boto3.client('sns')
+    sns_topic_arn = os.environ['SNS_TOPIC_ARN']  # Retrieve the ARN from environment variables
+    sns.publish(
+        TopicArn=sns_topic_arn,  # Use the ARN from environment variables
+        Message=json.dumps({'default': json.dumps(message)}),
+        MessageStructure='json'
+    )

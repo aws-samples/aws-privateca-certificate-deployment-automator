@@ -1,4 +1,18 @@
 Resources:
+  # SNS Topic for failed certificate rotation
+  FailedCertRotationSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:  
+      TopicName: FailedCertRotationTopic
+
+  FailedCertRotationSNSEmailSub:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      TopicArn: !Ref FailedCertRotationSNSTopic
+      Endpoint: !Ref SNSSubscriberEmail
+
+  
   # Schedule resource for triggering Lambda
   Schedule:
     Type: AWS::Scheduler::Schedule
@@ -63,9 +77,11 @@ Resources:
                 Action:
                   - 'lambda:InvokeFunction'
                   - 'dynamodb:PartiQLSelect'
+                  - 'sns:Publish'
                 Resource:
                   - !GetAtt CertIssueLambda.Arn
                   - !GetAtt DynamoDBCertificateTable.Arn
+                  - !Ref  FailedCertRotationSNSTopic
 
     # IAM role for CertIssueLambda
   CertIssueLambdaRole:
@@ -93,7 +109,9 @@ Resources:
                   - 'ssm:GetCommandInvocation'
                   - 'dynamodb:PutItem'
                   - 'acm-pca:IssueCertificate'
+                  - 'sns:Publish'
                 Resource:
+                  - !Ref  FailedCertRotationSNSTopic
                   - !GetAtt DynamoDBCertificateTable.Arn
                   - !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:*'
                   - !Sub 'arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript'
@@ -127,7 +145,9 @@ Resources:
                   - 'dynamodb:GetItem'
                   - 'ssm:SendCommand'
                   - 'ssm:GetCommandInvocation'
+                  - 'sns:Publish'
                 Resource:
+                  - !Ref FailedCertRotationSNSTopic
                   - !GetAtt PCA.Arn
                   - !GetAtt DynamoDBCertificateTable.Arn
                   - !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:*'
@@ -175,6 +195,7 @@ Resources:
           LAMBDA_CERT_ISSUE_ARN: !GetAtt CertIssueLambda.Arn
           DEFAULT_CERT_PATH: !Ref CertPath
           DEFAULT_KEY_PATH: !Ref KeyPath
+          SNS_TOPIC_ARN: !Ref FailedCertRotationSNSTopic
 
   # Lambda function for CertIssue
   CertIssueLambda:
@@ -190,6 +211,7 @@ Resources:
           SigningAlgorithm: !Ref SigningAlgorithm
           PCAarn: !GetAtt PCA.Arn
           CSR_PATH: !Ref CSRPath
+          SNS_TOPIC_ARN: !Ref FailedCertRotationSNSTopic
 
   # Lambda function for CertDeploy
   CertDeployLambda:
@@ -212,6 +234,7 @@ Resources:
           IAMRAProfileARN: !GetAtt IAMRAProfile1.ProfileArn
           IAMRARoleARN: !GetAtt IAMRARole.Arn
           DEFAULT_AWSSigningHelperPath: !Ref AWSSigningHelperPath
+          SNS_TOPIC_ARN: !Ref FailedCertRotationSNSTopic
 
   # Permission for EventBridge to invoke CertDeployLambda
   CertDeployLambdaPolicy:
@@ -354,15 +377,15 @@ Parameters:
     Description: Enter the number of years the CA certificate is valid for.
   CertPath:
     Type: String
-    Default: /root
+    Default: /tmp
     Description: Path on the filesystem to store the certificate.
   CACertPath:
     Type: String
-    Default: /root
+    Default: /tmp
     Description: Path on the filesystem to store the CA certificate.
   KeyPath:
     Type: String
-    Default: /root
+    Default: /tmp
     Description: Path on the filesystem to store private key.
   CSRPath:
     Type: String
@@ -372,6 +395,9 @@ Parameters:
     Type: String
     Default: /root
     Description: Path on the filesystem where the aws_signing_helper is located.
+  SNSSubscriberEmail:
+    Type: String
+    Description: The email address to subscribe to the SNS topic for failed certificate rotations.
 
 Outputs:
   IAMRATrustAnchorARN:

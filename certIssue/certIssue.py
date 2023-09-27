@@ -36,6 +36,7 @@ def lambda_handler(event, context):
             '#!/bin/bash',
             f'openssl req -nodes -newkey rsa:2048 -keyout "{key_path}/{host}-new.key" -out "{csr_path}/{host}.csr" -subj "/CN={host}"',
             f'cat "{csr_path}/{host}.csr"',
+            f'chmod 400 "{key_path}/{host}-new.key"',
         ]
         command_str = '\n'.join(commands)
 
@@ -108,4 +109,15 @@ def lambda_handler(event, context):
     
     except Exception as e:
         logger.error(str(e))
+        send_sns_alert(f"Certificate rotation failed for {host}: {e}")
+
         raise
+
+def send_sns_alert(message):
+    sns = boto3.client('sns')
+    sns_topic_arn = os.environ['SNS_TOPIC_ARN']  # Retrieve the ARN from environment variables
+    sns.publish(
+        TopicArn=sns_topic_arn,  # Use the ARN from environment variables
+        Message=json.dumps({'default': json.dumps(message)}),
+        MessageStructure='json'
+    )

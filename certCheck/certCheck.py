@@ -37,7 +37,7 @@ def lambda_handler(event, context):
             
             if "expiry" in item and len(item["expiry"]["S"]) != 0:
                 today = datetime.now()
-                future_date = today + timedelta(days=2)
+                future_date = today + timedelta(days=1)
 
                 expiry_date = datetime.strptime(item["expiry"]["S"], "%Y-%m-%d %H:%M:%S")
 
@@ -61,6 +61,7 @@ def lambda_handler(event, context):
                 
     except Exception as e:
         logger.error("An error occurred: ", exc_info=True)
+        send_sns_alert(f"Certificate rotation trigger failed: {e}")
         raise e
 
 
@@ -76,3 +77,12 @@ def issue_certificate(lambda_cert_issue_arn, host_id, cert_path, key_path):
         })
     )
     logger.info(f"Invoked the certificate issue lambda for host: {host_id}")
+
+def send_sns_alert(message):
+    sns = boto3.client('sns')
+    sns_topic_arn = os.environ['SNS_TOPIC_ARN']  # Retrieve the ARN from environment variables
+    sns.publish(
+        TopicArn=sns_topic_arn,  # Use the ARN from environment variables
+        Message=json.dumps({'default': json.dumps(message)}),
+        MessageStructure='json'
+    )
