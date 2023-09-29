@@ -1,4 +1,33 @@
 Resources:
+  # S3 Bucket for CRL
+  CRLBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-crl-bucket-${AWS::AccountId}'
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+
+  # S3 Bucket Policy
+  CRLBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CRLBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'acm-pca.amazonaws.com'
+            Action:
+              - 's3:PutObject'
+              - 's3:PutObjectAcl'
+              - 's3:GetBucketAcl'
+              - 's3:GetBucketLocation'
+            Resource: 
+              - !Sub 'arn:aws:s3:::${CRLBucket}/*'
+              - !Sub 'arn:aws:s3:::${CRLBucket}'
+
   # SNS Topic for failed certificate rotation
   FailedCertRotationSNSTopic:
     Type: AWS::SNS::Topic
@@ -27,6 +56,7 @@ Resources:
         RoleArn: !GetAtt EventBridgeSchedulerRole.Arn
       State: 'ENABLED'
       Name: 'DailyCertCheckSchedule'
+    DependsOn: EventBridgeSchedulerRole
 
   # IAM role for testing IAM Roles Anywhere
   IAMRARole:
@@ -83,7 +113,7 @@ Resources:
                   - !GetAtt DynamoDBCertificateTable.Arn
                   - !Ref  FailedCertRotationSNSTopic
 
-    # IAM role for CertIssueLambda
+  # IAM role for CertIssueLambda
   CertIssueLambdaRole:
     Type: AWS::IAM::Role
     Properties:
@@ -118,6 +148,36 @@ Resources:
                   - !GetAtt PCA.Arn
                   - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:*'
 
+  # IAM role for the Lambda CRLProcess function
+  CRLProcessorLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: CRLProcessorPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - rolesanywhere:ImportCrl
+                Resource: 
+                  - !Sub 'arn:aws:s3:::${CRLBucket}/*'
+              - Effect: Allow
+                Action:
+                  - rolesanywhere:ImportCrl
+                Resource: 
+                  - !Sub 'arn:aws:rolesanywhere:${AWS::Region}:${AWS::AccountId}:crl/*'
+              
   # IAM role for CertDeployLambda
   CertDeployLambdaRole:
     Type: AWS::IAM::Role
@@ -170,7 +230,7 @@ Resources:
             Condition:
               StringEquals:
                 'aws:SourceAccount': !Ref 'AWS::AccountId'
-                'aws:SourceArn': !Sub 'arn:aws:scheduler:${AWS::Region}:${AWS::AccountId}:schedule/default/DailyCertCheckSchedule'
+
       Policies:
         - PolicyName: !Sub Amazon-EventBridge-Scheduler-Execution-Policy-${AWS::StackName}
           PolicyDocument:
@@ -179,6 +239,21 @@ Resources:
               - Effect: Allow
                 Action: 'lambda:InvokeFunction'
                 Resource: !GetAtt CertTriggerLambda.Arn
+
+  # Lambda function to process CRL
+  CRLProcessorLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: 'CRLProcessor'
+      Handler: 'crlProcess.lambda_handler'
+      Layers:
+        - !Ref CryptographyLambdaLayer
+      Role: !GetAtt CRLProcessorLambdaRole.Arn
+      Code: crlProcess
+      Runtime: python3.9
+      Environment:
+        Variables:
+          IAMRATrustAnchorARN: !GetAtt IAMRATA.TrustAnchorArn 
 
   # Lambda function for CertTrigger
   CertTriggerLambda:
@@ -219,7 +294,7 @@ Resources:
     Properties:
       Role: !GetAtt CertDeployLambdaRole.Arn
       FunctionName: 'CertDeploy'
-      Runtime: 'python3.10'
+      Runtime: 'python3.9'
       Handler: 'certDeploy.lambda_handler'
       Layers:
         - !Ref CryptographyLambdaLayer
@@ -245,6 +320,14 @@ Resources:
       Principal: 'events.amazonaws.com'
       SourceArn: !GetAtt EventBridgeRule.Arn
 
+  CRLProcessorLambdaInvokeByEventBridge:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt CRLProcessorLambda.Arn
+      Principal: events.amazonaws.com
+
+
   # Lambda Layer for cryptography
   CryptographyLambdaLayer:
     Type: AWS::Lambda::LayerVersion
@@ -253,7 +336,7 @@ Resources:
       CompatibleArchitectures:
         - x86_64
       CompatibleRuntimes:
-        - python3.10
+        - python3.9
       Content: lambda-layer.zip
 
   # DynamoDB table for storing certificates
@@ -283,6 +366,13 @@ Resources:
         Country: !Ref CACountry
         Organization: !Ref OrgName
         CommonName: !Ref CACommonName
+      RevocationConfiguration:
+        CrlConfiguration:
+           Enabled: true
+           S3BucketName: !Ref CRLBucket
+           ExpirationInDays: 30
+           S3ObjectAcl: BUCKET_OWNER_FULL_CONTROL
+    DependsOn: CRLBucketPolicy
 
   # ACM PCA Certificate
   PCACert:
@@ -336,6 +426,35 @@ Resources:
       Targets:
         - Arn: !GetAtt CertDeployLambda.Arn
           Id: Id-EventBridge-Target
+
+  CRLBucketEventBridgeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - "aws.s3"
+        detail-type:
+          - "Object Created"
+        account:
+          - !Ref 'AWS::AccountId'
+        region:
+          - !Ref 'AWS::Region'
+        detail:
+          bucket:
+            name:
+              - !Ref CRLBucket
+          object:
+            key:
+              - { "prefix": "crl/" }
+              - { "suffix": ".crl" }
+          reason:
+            - "PutObject"
+      Targets:
+        - Id: "CRLProcessorLambdaTarget"
+          Arn: !GetAtt CRLProcessorLambda.Arn
+
+
+
 
 Parameters:
   SigningAlgorithm:
@@ -415,3 +534,8 @@ Outputs:
     Value: !GetAtt IAMRARole.Arn
     Export:
       Name: IAMRARoleARN
+  PCAARN:
+    Description: Arn of the PCA.
+    Value: !GetAtt PCA.Arn
+    Export:
+      Name: PCA-ARN

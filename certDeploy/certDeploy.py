@@ -59,7 +59,7 @@ def lambda_handler(event, context):
         # Get the subject, common name, serial number, and expiration date from the certificate
         subject = cert.subject
         common_name = subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
-        serial = cert.serial_number
+        serial = hex(cert.serial_number)[2:].upper()
         expiry = cert.not_valid_after
 
         # Log extracted details
@@ -73,7 +73,6 @@ def lambda_handler(event, context):
             }
         )
         item = response['Item']
-        logger.info(f"DynamoDB Item: {item}")
         
         # Use default paths if the ones from DynamoDB are empty
         cacert_path = item.get('cacertPath') or DEFAULT_CACERT_PATH
