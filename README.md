@@ -6,7 +6,7 @@ This project provides an architectural pattern and sample code for automating th
 ## Architecture
 The solution comprises multiple stages involving various AWS services:
 
-1. Amazon EventBridge Scheduler triggers a Lambda function daily.
+1. Amazon EventBridge Scheduler triggers a Lambda function twice daily.
 2. The Lambda function scans an Amazon DynamoDB table to identify instances requiring certificate management.
 3. A second Lambda function, triggered based on the certificate's expiry date, instructs Systems Manager to execute a ‘Run Command’ on the instance, generating a Certificate Signing Request (CSR) and a private key.
 4. The CSR is retrieved by the Lambda function, and the private key stays securely on the instance.
@@ -29,12 +29,12 @@ The solution comprises multiple stages involving various AWS services:
 `aws cloudformation package --template-file cf_template.yaml --s3-bucket <bucket_name> --output-template-file packaged.yaml`
 
 ### Deploy the CloudFormation stack
-`aws cloudformation deploy --template packaged.yaml --stack-name SSM-PCA-Stack --capabilities CAPABILITY_NAMED_IAM --parameter-overrides "CertPath=/tmp" "CACertPath=/tmp" "CSRPath=/tmp" "KeyPath=/tmp" "SNSSubscriberEmail=pat_candella@example.org"`
+`aws cloudformation deploy --template packaged.yaml --stack-name ssm-pca-stack --capabilities CAPABILITY_NAMED_IAM --parameter-overrides "CertPath=/tmp" "CACertPath=/tmp" "CSRPath=/tmp" "KeyPath=/tmp" "SNSSubscriberEmail=pat_candella@example.org"`
 
 After deployment, add the hostID from Systems Manager for hosts that require certificate management into the created DynamoDB table.
 
 ## Usage
-The CertCheck Lambda function created by the CloudFormation template will run daily to ensure the certificates for the hosts are kept up-to-date. If necessary, you can use the AWS cli to run the Lambda function on-demand.
+The CertCheck Lambda function created by the CloudFormation template will run twice daily to ensure the certificates for the hosts are kept up-to-date. If necessary, you can use the AWS cli to run the Lambda function on-demand.
 `aws lambda invoke --function-name CertCheck-Trigger --cli-binary-format raw-in-base64-out response.json`
 
 
