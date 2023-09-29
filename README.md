@@ -29,13 +29,13 @@ The solution comprises multiple stages involving various AWS services:
 `aws cloudformation package --template-file cf_template.yaml --s3-bucket <bucket_name> --output-template-file packaged.yaml`
 
 ### Deploy the CloudFormation stack
-`aws cloudformation deploy --template packaged.yaml --stack-name SSM-PCA-Stack --capabilities CAPABILITY_NAMED_IAM --parameter-overrides "CertPath=/tmp" "CACertPath=/tmp" "CSRPath=/tmp" "KeyPath=/tmp"`
+`aws cloudformation deploy --template packaged.yaml --stack-name SSM-PCA-Stack --capabilities CAPABILITY_NAMED_IAM --parameter-overrides "CertPath=/tmp" "CACertPath=/tmp" "CSRPath=/tmp" "KeyPath=/tmp" "SNSSubscriberEmail=pat_candella@example.org"`
 
 After deployment, add the hostID from Systems Manager for hosts that require certificate management into the created DynamoDB table.
 
 ## Usage
 The CertCheck Lambda function created by the CloudFormation template will run daily to ensure the certificates for the hosts are kept up-to-date. If necessary, you can use the AWS cli to run the Lambda function on-demand.
-`aws lambda invoke --function-name CertCheck-Trigger --payload '{ "key": "value" }' --cli-binary-format raw-in-base64-out response.json`
+`aws lambda invoke --function-name CertCheck-Trigger --cli-binary-format raw-in-base64-out response.json`
 
 
 # License
