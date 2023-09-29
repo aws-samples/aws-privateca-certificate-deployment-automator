@@ -169,9 +169,11 @@ Resources:
               - Effect: Allow
                 Action:
                   - s3:GetObject
-                  - rolesanywhere:ImportCrl
+                  - 'sns:Publish'
                 Resource: 
                   - !Sub 'arn:aws:s3:::${CRLBucket}/*'
+                  - !Ref FailedCertRotationSNSTopic
+
               - Effect: Allow
                 Action:
                   - rolesanywhere:ImportCrl
@@ -255,6 +257,8 @@ Resources:
       Environment:
         Variables:
           IAMRATrustAnchorARN: !GetAtt IAMRATA.TrustAnchorArn 
+          SNS_TOPIC_ARN: !Ref FailedCertRotationSNSTopic
+
 
   # Lambda function for CertTrigger
   CertTriggerLambda:
