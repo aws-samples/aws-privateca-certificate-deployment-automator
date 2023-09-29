@@ -50,12 +50,12 @@ Resources:
       FlexibleTimeWindow:
         MaximumWindowInMinutes: 15
         Mode: FLEXIBLE
-      ScheduleExpression: 'cron(15 15 * * ? *)'
+      ScheduleExpression: 'cron(15 3,15 * * ? *)'
       Target:
         Arn: !GetAtt CertTriggerLambda.Arn
         RoleArn: !GetAtt EventBridgeSchedulerRole.Arn
       State: 'ENABLED'
-      Name: 'DailyCertCheckSchedule'
+      Name: 'CertCheckSchedule'
     DependsOn: EventBridgeSchedulerRole
 
   # IAM role for testing IAM Roles Anywhere
@@ -244,6 +244,7 @@ Resources:
   CRLProcessorLambda:
     Type: AWS::Lambda::Function
     Properties:
+      Timeout: 5
       FunctionName: 'CRLProcessor'
       Handler: 'crlProcess.lambda_handler'
       Layers:
@@ -259,6 +260,7 @@ Resources:
   CertTriggerLambda:
     Type: AWS::Lambda::Function
     Properties:
+      Timeout: 5    
       Role: !GetAtt CertTriggerLambdaRole.Arn
       FunctionName: 'CertCheck-Trigger'
       Runtime: 'python3.9'
@@ -276,6 +278,7 @@ Resources:
   CertIssueLambda:
     Type: AWS::Lambda::Function
     Properties:
+      Timeout: 5
       Role: !GetAtt CertIssueLambdaRole.Arn
       FunctionName: 'CertIssue'
       Runtime: 'python3.9'
@@ -452,9 +455,6 @@ Resources:
       Targets:
         - Id: "CRLProcessorLambdaTarget"
           Arn: !GetAtt CRLProcessorLambda.Arn
-
-
-
 
 Parameters:
   SigningAlgorithm:
