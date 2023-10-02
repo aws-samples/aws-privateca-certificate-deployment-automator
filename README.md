@@ -25,6 +25,15 @@ Additionally, on a certificate rotation failure, an Amazon Simple Notification S
 
 ![Diagram](./diagram.png)
 
+
+## Certificate Revocation
+Use the following command to revole a certificate, replacing the placeholders with your own information.
+aws acm-pca revoke-certificate --certificate-authority-arn <certificate-authority-arn> --certificate-serial <certificate-serial> --revocation-reason <revocation-reason>
+
+Once revoked, AWS Private Certificate Authority will generate a CRL file within 30 minutes and upload it to the CRL S3 bucket that was created by the CloudFormation. From there, the CRLProcessor Lambda function will receive a notification of the new CRL file and pass it to the IAM Roles Anywhere API.
+
+![Diagram](./crl-diagram.png)
+
 ## Installation
 ### Clone the repository
 `git@github.com:aws-samples/aws-privateca-certificate-deployment-automator.git`
