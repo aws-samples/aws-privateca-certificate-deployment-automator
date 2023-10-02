@@ -21,7 +21,7 @@ The solution comprises multiple stages involving various AWS services:
 13.	The Run Command conducts a brief test to verify the certificate's functionality, and upon success, stores the signed certificate on the instance.
 14.	The instance can then exchange the certificate for AWS credentials.
 
-Additionally, of a certificate rotation failure, an Amazon Simple Notification Service notification is delivered to an email address specified during the CloudFormation deployment.
+Additionally, on a certificate rotation failure, an Amazon Simple Notification Service notification is delivered to an email address specified during the CloudFormation deployment.
 
 ![Diagram](./diagram.png)
 
