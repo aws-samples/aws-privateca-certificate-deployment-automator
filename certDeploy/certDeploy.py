@@ -98,7 +98,7 @@ def main(event,context):
                 f'echo "{certificate}" > {cert_path}/{common_name}-new.crt',
                 f'echo "{ca_certificate}" > {cacert_path}/ca_chain_certificate.crt',
                 f'if [ ! -f {AWSSigningHelperPath}/aws_signing_helper ]; then echo "{AWSSigningHelperPath}/aws_signing_helper not found" >&2; exit 1; fi',
-                f'{AWSSigningHelperPath}/aws_signing_helper credential-process --certificate {cert_path}/{common_name}-new.crt --intermediates {cacert_path}/ca_chain_certificate.crt --private-key {key_path}/{common_name}-new.key --profile-arn {IAM_RA_PROFILE_ARN} --role-arn {IAM_RA_ROLE_ARN} --trust-anchor-arn {IAM_RA_TRUST_ANCHOR_ARN} | grep -q "Expiration"',
+                f'{AWSSigningHelperPath}/aws_signing_helper credential-process --certificate {cert_path}/{common_name}-new.crt --intermediates {cacert_path}/ca_chain_certificate.crt --private-key {key_path}/{common_name}-new.key --profile-arn {IAM_RA_PROFILE_ARN} --role-arn {IAM_RA_ROLE_ARN} --trust-anchor-arn {IAM_RA_TRUST_ANCHOR_ARN} | grep -q "SessionToken"',
                 f'if [ $? -eq 0 ]; then mv {cert_path}/{common_name}-new.crt {cert_path}/{common_name}.crt && mv {key_path}/{common_name}-new.key {key_path}/{common_name}.key; else exit 1; fi',
             ]
         }
