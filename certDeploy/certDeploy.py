@@ -148,14 +148,14 @@ def main(event,context):
 
 
 def lambda_handler(event, context):
-    common_name = event.get("resources", ["Unknown Host"])[0]
+    cert_arn = event.get("resources", ["Unknown certificate ARN"])[1]
     try:
         main(event, context)
         return {'statusCode': 200}
     except Exception as e:
         logger = logging.getLogger()
         logger.error(f"An error occurred: {str(e)}, traceback: {traceback.format_exc()}")
-        send_sns_alert(f"Certificate rotation failed for {common_name}: {e}")
+        send_sns_alert(f"Certificate rotation failed for {cert_arn}: {e}")
         raise
     
 def send_sns_alert(message):
