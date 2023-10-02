@@ -22,8 +22,6 @@ The solution comprises multiple stages involving various AWS services:
 14.	The instance can then exchange the certificate for AWS credentials.
 
 Additionally, of a certificate rotation failure, an Amazon Simple Notification Service notification is delivered to an email address specified during the CloudFormation deployment.
-![image](https://github.com/aws-samples/aws-privateca-certificate-deployment-automator/assets/9385461/bc3464da-115d-4bf0-b93b-2f331e73f60a)
-
 
 ![Diagram](./diagram.png)
 
