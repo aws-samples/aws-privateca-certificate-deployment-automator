@@ -6,15 +6,24 @@ This project provides an architectural pattern and sample code for automating th
 ## Architecture
 The solution comprises multiple stages involving various AWS services:
 
-1. Amazon EventBridge Scheduler triggers a Lambda function twice daily.
-2. The Lambda function scans an Amazon DynamoDB table to identify instances requiring certificate management.
-3. A second Lambda function, triggered based on the certificate's expiry date, instructs Systems Manager to execute a ‘Run Command’ on the instance, generating a Certificate Signing Request (CSR) and a private key.
-4. The CSR is retrieved by the Lambda function, and the private key stays securely on the instance.
-5. The Lambda function uses the CSR to request a signed certificate from the PCA service.
-6. PCA service triggers an event via Amazon EventBridge on successful certificate issuance, which contains the ID of the new certificate.
-7. Another Lambda function, triggered by this event, retrieves the certificate from PCA and instructs Systems Manager to execute a ‘Run Command’ with the certificate data.
-8. The 'Run Command' tests the certificate's functionality, stores the signed certificate on the instance upon success.
-9. The Lambda function updates the certificate's expiry date in the DynamoDB table.
+1.	Amazon EventBridge Scheduler invokes a Lambda function called CertCheck twice daily.
+2.	The Lambda function scans a DynamoDB table to identify instances that require certificate management. It specifically targets instances managed by Systems Manager that the administrator populates into the table.
+3.	The information about the instances with no certificate and instances requiring new certificates due to expiry of existing ones is received by the CertCheck Lambda function.
+4.	Depending on the certificate's expiration date for a particular instance, a second Lambda function called CertIssue is launched. 
+5.	The CertIssue Lambda function instructs Systems Manager to apply a Run Command on the instance. 
+6.	The Run command generates a Certificate Signing Request (CSR) and a Private Key on the instance.
+7.	The CSR is retrieved by Systems Manager, and the private key remains securely on the instance.
+8.	The CertIssue Lambda function then retrieves the CSR from Systems Manager.
+9.	The CertIssue Lambda function uses the CSR to request a signed certificate from the AWS Private CA service.
+10.	On successful certificate issuance, AWS Private CA service launches an event through EventBridge that contains the ID of the newly issued certificate.
+11.	This event subsequently invokes a third Lambda function called CertDeploy.
+12.	The CertDeploy lambda retrieves the certificate from AWS Private CA and commands Systems Manager to launch a Run Command with the certificate data and updates the certificate's expiration date in the DynamoDB table for future reference.
+13.	The Run Command conducts a brief test to verify the certificate's functionality, and upon success, stores the signed certificate on the instance.
+14.	The instance can then exchange the certificate for AWS credentials.
+
+Additionally, of a certificate rotation failure, an Amazon Simple Notification Service notification is delivered to an email address specified during the CloudFormation deployment.
+![image](https://github.com/aws-samples/aws-privateca-certificate-deployment-automator/assets/9385461/bc3464da-115d-4bf0-b93b-2f331e73f60a)
+
 
 ![Diagram](./diagram.png)
 
