@@ -27,6 +27,16 @@ Resources:
             Resource: 
               - !Sub 'arn:aws:s3:::${CRLBucket}/*'
               - !Sub 'arn:aws:s3:::${CRLBucket}'
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !Sub 'arn:aws:s3:::${CRLBucket}'
+              - !Sub 'arn:aws:s3:::${CRLBucket}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
 
   # SNS Topic for failed certificate rotation
   FailedCertRotationSNSTopic:
