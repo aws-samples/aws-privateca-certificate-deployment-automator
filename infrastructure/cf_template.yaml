@@ -51,277 +51,17 @@ Resources:
       TopicArn: !Ref FailedCertRotationSNSTopic
       Endpoint: !Ref SNSSubscriberEmail
 
-  
-  # Single certificate workflow state machine
-  CertificateWorkflowStateMachine:
-    Type: AWS::StepFunctions::StateMachine
-    Properties:
-      StateMachineName: !Sub '${AWS::StackName}-CertificateWorkflow'
-      RoleArn: !GetAtt StepFunctionsExecutionRole.Arn
-      DefinitionString: !Sub |
-        {
-          "Comment": "Simplified certificate lifecycle workflow with consolidated error handling",
-          "StartAt": "GetExpiringCertificates",
-          "States": {
-            "GetExpiringCertificates": {
-              "Type": "Task",
-              "Resource": "${CertTriggerLambda.Arn}",
-              "Next": "ProcessCertificatesBatch",
-              "Retry": [
-                {
-                  "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
-                  "IntervalSeconds": 2,
-                  "MaxAttempts": 3,
-                  "BackoffRate": 2.0
-                },
-                {
-                  "ErrorEquals": ["States.TaskFailed"],
-                  "IntervalSeconds": 1,
-                  "MaxAttempts": 2,
-                  "BackoffRate": 2.0
-                }
-              ],
-              "Catch": [
-                {
-                  "ErrorEquals": ["States.ALL"],
-                  "Next": "NotifyWorkflowFailure",
-                  "ResultPath": "$.error"
-                }
-              ]
-            },
-            "ProcessCertificatesBatch": {
-              "Type": "Map",
-              "ItemsPath": "$.certificates",
-              "MaxConcurrency": 200,
-              "Iterator": {
-                "StartAt": "GenerateCSR",
-                "States": {
-                  "GenerateCSR": {
-                    "Type": "Task",
-                    "Resource": "${CertCSRLambda.Arn}",
-                    "ResultPath": "$.csrResult",
-                    "Next": "InitializeRetryCounter",
-                    "Retry": [
-                      {
-                        "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
-                        "IntervalSeconds": 2,
-                        "MaxAttempts": 3,
-                        "BackoffRate": 2.0
-                      },
-                      {
-                        "ErrorEquals": ["States.TaskFailed"],
-                        "IntervalSeconds": 5,
-                        "MaxAttempts": 2,
-                        "BackoffRate": 2.0
-                      }
-                    ],
-                    "Catch": [
-                      {
-                        "ErrorEquals": ["States.ALL"],
-                        "Next": "NotifyFailure",
-                        "ResultPath": "$.error"
-                      }
-                    ]
-                  },
-                  "InitializeRetryCounter": {
-                    "Type": "Pass",
-                    "Parameters": {
-                      "hostID.$": "$.hostID",
-                      "certPath.$": "$.certPath",
-                      "keyPath.$": "$.keyPath",
-                      "cacertPath.$": "$.cacertPath",
-                      "signinghelperPath.$": "$.signinghelperPath",
-                      "csrResult.$": "$.csrResult",
-                      "csrRetryCount": 0
-                    },
-                    "Next": "WaitForCSRCompletion"
-                  },
-                  "WaitForCSRCompletion": {
-                    "Type": "Wait",
-                    "Seconds": 15,
-                    "Next": "CheckCSRStatus"
-                  },
-                  "CheckCSRStatus": {
-                    "Type": "Task",
-                    "Resource": "${CertCSRStatusLambda.Arn}",
-                    "Next": "CSRStatusChoice",
-                    "Retry": [
-                      {
-                        "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
-                        "IntervalSeconds": 2,
-                        "MaxAttempts": 3,
-                        "BackoffRate": 2.0
-                      }
-                    ],
-                    "Catch": [
-                      {
-                        "ErrorEquals": ["States.ALL"],
-                        "Next": "NotifyFailure",
-                        "ResultPath": "$.error"
-                      }
-                    ]
-                  },
-                  "CSRStatusChoice": {
-                    "Type": "Choice",
-                    "Choices": [
-                      {
-                        "Variable": "$.csrStatus",
-                        "StringEquals": "Success",
-                        "Next": "IssueCertificate"
-                      },
-                      {
-                        "And": [
-                          {
-                            "Or": [
-                              {
-                                "Variable": "$.csrStatus",
-                                "StringEquals": "InProgress"
-                              },
-                              {
-                                "Variable": "$.csrStatus",
-                                "StringEquals": "Pending"
-                              }
-                            ]
-                          },
-                          {
-                            "Variable": "$.csrRetryCount",
-                            "NumericLessThan": 12
-                          }
-                        ],
-                        "Next": "IncrementRetryCount"
-                      }
-                    ],
-                    "Default": "NotifyFailure"
-                  },
-                  "IncrementRetryCount": {
-                    "Type": "Pass",
-                    "Parameters": {
-                      "hostID.$": "$.hostID",
-                      "certPath.$": "$.certPath",
-                      "keyPath.$": "$.keyPath",
-                      "cacertPath.$": "$.cacertPath",
-                      "signinghelperPath.$": "$.signinghelperPath",
-                      "csrResult.$": "$.csrResult",
-                      "csrStatus.$": "$.csrStatus",
-                      "csrRetryCount.$": "States.MathAdd($.csrRetryCount, 1)"
-                    },
-                    "Next": "WaitForCSRCompletion"
-                  },
-                  "IssueCertificate": {
-                    "Type": "Task",
-                    "Resource": "${CertIssueLambda.Arn}",
-                    "Parameters": {
-                      "hostID.$": "$.hostID",
-                      "certPath.$": "$.certPath",
-                      "keyPath.$": "$.keyPath",
-                      "cacertPath.$": "$.cacertPath",
-                      "signinghelperPath.$": "$.signinghelperPath",
-                      "commandId.$": "$.csrResult.commandId",
-                      "csrOutput.$": "$.csrOutput"
-                    },
-                    "ResultPath": "$.certificateResult",
-                    "Next": "WaitForCertificateIssuance",
-                    "Retry": [
-                      {
-                        "ErrorEquals": ["AcmPca.ThrottlingException", "AcmPca.InternalServerException"],
-                        "IntervalSeconds": 3,
-                        "MaxAttempts": 5,
-                        "BackoffRate": 2.0
-                      },
-                      {
-                        "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
-                        "IntervalSeconds": 2,
-                        "MaxAttempts": 3,
-                        "BackoffRate": 2.0
-                      },
-                      {
-                        "ErrorEquals": ["States.TaskFailed"],
-                        "IntervalSeconds": 5,
-                        "MaxAttempts": 2,
-                        "BackoffRate": 1.5
-                      }
-                    ],
-                    "Catch": [
-                      {
-                        "ErrorEquals": ["States.ALL"],
-                        "Next": "NotifyFailure",
-                        "ResultPath": "$.error"
-                      }
-                    ]
-                  },
-                  "WaitForCertificateIssuance": {
-                    "Type": "Task",
-                    "Resource": "arn:aws:states:::aws-sdk:dynamodb:putItem.waitForTaskToken",
-                    "Parameters": {
-                      "TableName": "${DynamoDBCertificateTable}",
-                      "Item": {
-                        "hostID": {"S.$": "$.hostID"},
-                        "status": {"S": "AWAITING_DEPLOYMENT"},
-                        "taskToken": {"S.$": "$$.Task.Token"},
-                        "certificateArn": {"S.$": "$.certificateResult.body.certificateArn"},
-                        "timestamp": {"S.$": "$$.State.EnteredTime"},
-                        "certPath": {"S.$": "$.certPath"},
-                        "keyPath": {"S.$": "$.keyPath"},
-                        "cacertPath": {"S.$": "$.cacertPath"},
-                        "signinghelperPath": {"S.$": "$.signinghelperPath"}
-                      }
-                    },
-                    "Next": "CertificateSuccess",
-                    "TimeoutSeconds": 300,
-                    "Catch": [
-                      {
-                        "ErrorEquals": ["States.ALL"],
-                        "Next": "NotifyFailure",
-                        "ResultPath": "$.error"
-                      }
-                    ]
-                  },
-                  "CertificateSuccess": {
-                    "Type": "Pass",
-                    "Result": "Certificate processed successfully",
-                    "End": true
-                  },
-                  "NotifyFailure": {
-                    "Type": "Task",
-                    "Resource": "arn:aws:states:::sns:publish",
-                    "Parameters": {
-                      "TopicArn": "${FailedCertRotationSNSTopic}",
-                      "Message.$": "States.Format('Certificate processing failed for host {} at step {} with error: {}', $.hostID, $$.State.Name, $.error.Cause)"
-                    },
-                    "End": true
-                  }
-                }
-              },
-              "Next": "GenerateCompletionReport"
-            },
-            "GenerateCompletionReport": {
-              "Type": "Pass",
-              "Result": "All certificate processing completed",
-              "End": true
-            },
-            "NotifyWorkflowFailure": {
-              "Type": "Task",
-              "Resource": "arn:aws:states:::sns:publish",
-              "Parameters": {
-                "TopicArn": "${FailedCertRotationSNSTopic}",
-                "Message.$": "States.Format('Certificate workflow failed at step {} with error: {}', $$.State.Name, $.error.Cause)"
-              },
-              "End": true
-            }
-          }
-        }
-
-  # Schedule to trigger Step Functions
+  # Schedule to trigger CertCheck Lambda directly (blog pattern)
   Schedule:
     Type: AWS::Scheduler::Schedule
     Properties:
-      Description: 'Schedule to trigger certificate orchestration'
+      Description: 'Schedule to trigger certificate check'
       FlexibleTimeWindow:
         MaximumWindowInMinutes: 15
         Mode: FLEXIBLE
       ScheduleExpression: 'cron(15 3,15 * * ? *)'
       Target:
-        Arn: !GetAtt CertificateWorkflowStateMachine.Arn
+        Arn: !GetAtt CertTriggerLambda.Arn
         RoleArn: !GetAtt EventBridgeSchedulerRole.Arn
       State: 'ENABLED'
       Name: 'CertOrchestrationSchedule'
@@ -356,7 +96,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub LAMBDA-CertTriggerRole-${AWS::StackName}
-      Description: 'Role for Lambdas that need to look in DynamoDB for certificates'
+      Description: 'Role for CertCheck Lambda'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -393,67 +133,12 @@ Resources:
                 Resource:
                   - !GetAtt DynamoDBKMSKey.Arn
 
-  # IAM role for CertCSRLambda
-  CertCSRLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub LAMBDA-CertCSRRole-${AWS::StackName}
-      Description: 'Role for Lambda that generates CSRs via SSM'
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: 'lambda.amazonaws.com'
-            Action: 'sts:AssumeRole'
-      ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
-      Policies:
-        - PolicyName: !Sub LAMBDA-CertCSR-Policy-${AWS::StackName}
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'ssm:SendCommand'
-                  - 'ssm:GetCommandInvocation'
-                Resource:
-                  - !Sub 'arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript'
-                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:*'
-                  - !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*'
-
-  # IAM role for CertCSRStatusLambda
-  CertCSRStatusLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub LAMBDA-CertCSRStatusRole-${AWS::StackName}
-      Description: 'Role for Lambda that checks CSR generation status via SSM'
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: 'lambda.amazonaws.com'
-            Action: 'sts:AssumeRole'
-      ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
-      Policies:
-        - PolicyName: !Sub LAMBDA-CertCSRStatus-Policy-${AWS::StackName}
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'ssm:GetCommandInvocation'
-                Resource:
-                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:*'
-
-  # IAM role for CertIssueLambda
+  # IAM role for CertIssueLambda (now handles CSR + issuance)
   CertIssueLambdaRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub LAMBDA-CertIssueRole-${AWS::StackName}
-      Description: 'Role for Lambdas that need to issue certificates'
+      Description: 'Role for CertIssue Lambda (CSR generation + certificate issuance)'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -474,7 +159,9 @@ Resources:
                   - 'ssm:GetCommandInvocation'
                 Resource:
                   - !Sub 'arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript'
+                  - !Sub 'arn:aws:ssm:${AWS::Region}::document/AWS-RunPowerShellScript'
                   - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:*'
+                  - !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*'
               - Effect: Allow
                 Action:
                   - 'acm-pca:IssueCertificate'
@@ -511,19 +198,18 @@ Resources:
                 Resource: 
                   - !Sub 'arn:aws:s3:::${CRLBucket}/*'
                   - !Ref FailedCertRotationSNSTopic
-
               - Effect: Allow
                 Action:
                   - rolesanywhere:ImportCrl
                 Resource: 
                   - !Sub 'arn:aws:rolesanywhere:${AWS::Region}:${AWS::AccountId}:crl/*'
-              
+
   # IAM role for CertDeployLambda
   CertDeployLambdaRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub LAMBDA-CertDeployRole-${AWS::StackName}
-      Description: 'Role for Lambdas that need to deploy certificates'
+      Description: 'Role for CertDeploy Lambda'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -561,6 +247,7 @@ Resources:
                   - 'ssm:GetCommandInvocation'
                 Resource:
                   - !Sub 'arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript'
+                  - !Sub 'arn:aws:ssm:${AWS::Region}::document/AWS-RunPowerShellScript'
                   - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:*'
                   - !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*'
               - Effect: Allow
@@ -568,76 +255,13 @@ Resources:
                   - 'sns:Publish'
                 Resource:
                   - !Ref FailedCertRotationSNSTopic
-              - Effect: Allow
-                Action:
-                  - 'states:SendTaskSuccess'
-                  - 'states:SendTaskFailure'
-                Resource: '*'
 
-  # IAM role for Step Functions execution
-  StepFunctionsExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub StepFunctions-CertOrchestration-${AWS::StackName}
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: states.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: StepFunctionsExecutionPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - lambda:InvokeFunction
-                Resource:
-                  - !GetAtt CertTriggerLambda.Arn
-                  - !GetAtt CertIssueLambda.Arn
-                  - !GetAtt CertCSRLambda.Arn
-                  - !GetAtt CertCSRStatusLambda.Arn
-              - Effect: Allow
-                Action:
-                  - ssm:SendCommand
-                  - ssm:GetCommandInvocation
-                  - ssm:DescribeInstanceInformation
-                Resource:
-                  - !Sub 'arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript'
-                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:*'
-                  - !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*'
-              - Effect: Allow
-                Action:
-                  - sns:Publish
-                Resource:
-                  - !Ref FailedCertRotationSNSTopic
-              - Effect: Allow
-                Action:
-                  - acm-pca:RevokeCertificate
-                Resource:
-                  - !GetAtt PCA.Arn
-              - Effect: Allow
-                Action:
-                  - dynamodb:UpdateItem
-                  - dynamodb:PutItem
-                Resource:
-                  - !GetAtt DynamoDBCertificateTable.Arn
-              - Effect: Allow
-                Action:
-                  - kms:Decrypt
-                  - kms:GenerateDataKey
-                Resource:
-                  - !GetAtt DynamoDBKMSKey.Arn
-
-
-  # IAM role for EventBridge Scheduler rule
+  # IAM role for EventBridge Scheduler
   EventBridgeSchedulerRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub Amazon_EventBridge_Scheduler_LAMBDA-${AWS::StackName}
-      Description: 'Role for EventBridge Scheduler rule to target Lambda'
+      Description: 'Role for EventBridge Scheduler to invoke CertCheck Lambda'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -648,15 +272,14 @@ Resources:
             Condition:
               StringEquals:
                 'aws:SourceAccount': !Ref 'AWS::AccountId'
-
       Policies:
         - PolicyName: !Sub Amazon-EventBridge-Scheduler-Execution-Policy-${AWS::StackName}
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action: 'states:StartExecution'
-                Resource: !GetAtt CertificateWorkflowStateMachine.Arn
+                Action: 'lambda:InvokeFunction'
+                Resource: !GetAtt CertTriggerLambda.Arn
 
   # Lambda function to process CRL
   CRLProcessorLambda:
@@ -675,47 +298,12 @@ Resources:
           IAMRATrustAnchorARN: !GetAtt IAMRATA.TrustAnchorArn 
           SNS_TOPIC_ARN: !Ref FailedCertRotationSNSTopic
 
-
-  # Lambda function for CSR Generation
-  CertCSRLambda:
-    Type: AWS::Lambda::Function
-    Properties:
-      Timeout: 60  # Reduced from 360 since no waiting
-      MemorySize: 256  # Optimized for SSM operations
-      Role: !GetAtt CertCSRLambdaRole.Arn
-      FunctionName: 'CertCSR'
-      Runtime: 'python3.12'
-      Handler: 'certCSR.lambda_handler'
-      Layers:
-        - !Ref CryptographyLambdaLayer
-      Code: ../src/lambdas/certCSR
-      Environment:
-        Variables:
-          SNS_TOPIC_ARN: !Ref FailedCertRotationSNSTopic
-
-  # Lambda function for CSR Status Check
-  CertCSRStatusLambda:
-    Type: AWS::Lambda::Function
-    Properties:
-      Timeout: 30
-      MemorySize: 256  # Optimized for SSM status checks
-      Role: !GetAtt CertCSRStatusLambdaRole.Arn
-      FunctionName: 'CertCSRStatus'
-      Runtime: 'python3.12'
-      Handler: 'certCSRStatus.main'
-      Layers:
-        - !Ref CryptographyLambdaLayer
-      Code: ../src/lambdas/certCSRStatus
-      Environment:
-        Variables:
-          SNS_TOPIC_ARN: !Ref FailedCertRotationSNSTopic
-
-  # Lambda function for CertTrigger
+  # Lambda function for CertCheck (entry point)
   CertTriggerLambda:
     Type: AWS::Lambda::Function
     Properties:
-      Timeout: 30    
-      MemorySize: 512  # Higher memory for DynamoDB scanning at scale
+      Timeout: 60
+      MemorySize: 512
       Role: !GetAtt CertTriggerLambdaRole.Arn
       FunctionName: 'CertCheck-Trigger'
       Runtime: 'python3.12'
@@ -735,12 +323,12 @@ Resources:
           DYNAMODB_TABLE_NAME: !Ref DynamoDBCertificateTable
           RENEWAL_THRESHOLD_DAYS: !Ref RenewalThresholdDays
 
-  # Lambda function for CertIssue
+  # Lambda function for CertIssue (CSR generation + certificate issuance)
   CertIssueLambda:
     Type: AWS::Lambda::Function
     Properties:
-      Timeout: 60
-      MemorySize: 256  # Optimized for PCA operations
+      Timeout: 360
+      MemorySize: 256
       Role: !GetAtt CertIssueLambdaRole.Arn
       FunctionName: 'CertIssue'
       Runtime: 'python3.12'
@@ -788,13 +376,21 @@ Resources:
       Principal: 'events.amazonaws.com'
       SourceArn: !GetAtt EventBridgeRule.Arn
 
+  # Permission for EventBridge Scheduler to invoke CertTriggerLambda
+  CertTriggerSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt CertTriggerLambda.Arn
+      Action: 'lambda:InvokeFunction'
+      Principal: 'scheduler.amazonaws.com'
+      SourceArn: !GetAtt Schedule.Arn
+
   CRLProcessorLambdaInvokeByEventBridge:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
       FunctionName: !GetAtt CRLProcessorLambda.Arn
       Principal: events.amazonaws.com
-
 
   # Lambda Layer for cryptography
   CryptographyLambdaLayer:
@@ -1019,12 +615,11 @@ Parameters:
     Default: 2
     MinValue: 1
     MaxValue: 7
-    Description: Number of days before certificate expiry to trigger renewal. Default is 2 days for short-lived certificates.
-  
+    Description: Number of days before certificate expiry to trigger renewal.
   LayerVersion:
     Type: String
     Default: "1.0.1"
-    Description: Version of the Lambda layer - increment this to force layer updates (e.g., 1.0.1, 1.0.2)
+    Description: Version of the Lambda layer - increment this to force layer updates.
 
 Outputs:
   IAMRATrustAnchorARN:

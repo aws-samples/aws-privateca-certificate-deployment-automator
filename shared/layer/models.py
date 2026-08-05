@@ -38,15 +38,13 @@ def sanitize_host_id(host_id: str) -> str:
     return host_id
 
 
-def sanitize_path(path: str) -> str:
+def sanitize_path(path: str, platform: str = 'linux') -> str:
     """
-    Validate and sanitize file system paths.
-    
-    Ensures file paths are safe to use in system commands and prevents
-    directory traversal attacks.
+    Validate and sanitize file system paths for Linux or Windows.
     
     Args:
         path (str): File system path to validate
+        platform (str): 'linux' or 'windows'
         
     Returns:
         str: The validated path
@@ -57,12 +55,14 @@ def sanitize_path(path: str) -> str:
     if not path or not isinstance(path, str):
         raise ValueError("Path must be a non-empty string")
     
-    # Require absolute paths for security
-    if not path.startswith('/'):
-        raise ValueError("Path must be absolute")
-    
-    # Block directory traversal and other dangerous patterns
     if '..' in path or '~' in path:
         raise ValueError("Path contains dangerous patterns")
+    
+    if platform == 'windows':
+        if not (re.match(r'^[A-Za-z]:\\', path) or path.startswith('\\\\')):
+            raise ValueError("Windows path must be absolute (e.g. C:\\certs)")
+    else:
+        if not path.startswith('/'):
+            raise ValueError("Path must be absolute")
     
     return path
