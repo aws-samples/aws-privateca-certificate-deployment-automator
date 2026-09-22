@@ -669,7 +669,7 @@ Resources:
         - !Ref CryptographyLambdaLayer
       Role: !GetAtt CRLProcessorLambdaRole.Arn
       Code: ../src/lambdas/crlProcess
-      Runtime: python3.12
+      Runtime: python3.14
       Environment:
         Variables:
           IAMRATrustAnchorARN: !GetAtt IAMRATA.TrustAnchorArn 
@@ -684,7 +684,7 @@ Resources:
       MemorySize: 256  # Optimized for SSM operations
       Role: !GetAtt CertCSRLambdaRole.Arn
       FunctionName: 'CertCSR'
-      Runtime: 'python3.12'
+      Runtime: 'python3.14'
       Handler: 'certCSR.lambda_handler'
       Layers:
         - !Ref CryptographyLambdaLayer
@@ -701,7 +701,7 @@ Resources:
       MemorySize: 256  # Optimized for SSM status checks
       Role: !GetAtt CertCSRStatusLambdaRole.Arn
       FunctionName: 'CertCSRStatus'
-      Runtime: 'python3.12'
+      Runtime: 'python3.14'
       Handler: 'certCSRStatus.main'
       Layers:
         - !Ref CryptographyLambdaLayer
@@ -718,7 +718,7 @@ Resources:
       MemorySize: 512  # Higher memory for DynamoDB scanning at scale
       Role: !GetAtt CertTriggerLambdaRole.Arn
       FunctionName: 'CertCheck-Trigger'
-      Runtime: 'python3.12'
+      Runtime: 'python3.14'
       Handler: 'certCheck.lambda_handler'
       Layers:
         - !Ref CryptographyLambdaLayer
@@ -743,7 +743,7 @@ Resources:
       MemorySize: 256  # Optimized for PCA operations
       Role: !GetAtt CertIssueLambdaRole.Arn
       FunctionName: 'CertIssue'
-      Runtime: 'python3.12'
+      Runtime: 'python3.14'
       Handler: 'certIssue.lambda_handler'
       Layers:
         - !Ref CryptographyLambdaLayer
@@ -761,7 +761,7 @@ Resources:
     Properties:
       Role: !GetAtt CertDeployLambdaRole.Arn
       FunctionName: 'CertDeploy'
-      Runtime: 'python3.12'
+      Runtime: 'python3.14'
       Handler: 'certDeploy.lambda_handler'
       Layers:
         - !Ref CryptographyLambdaLayer
@@ -805,7 +805,7 @@ Resources:
       CompatibleArchitectures:
         - x86_64
       CompatibleRuntimes:
-        - python3.12
+        - python3.14
       Content: ../lambda-layer.zip
 
   # KMS Key for DynamoDB encryption
