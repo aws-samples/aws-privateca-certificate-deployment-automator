@@ -285,3 +285,4 @@ deployment-logs/
 execution-history/
 test-certificates/
 packaged.yaml
+lambda-layer.zip
