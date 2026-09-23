@@ -1,0 +1,691 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Optional CloudWatch dashboard for the AWS Private CA Certificate Deployment
+  Automator. This stack is fully standalone: it references the main stack's
+  resources only through parameters passed at deploy time (no Fn::ImportValue,
+  no exports), so it can be created, updated, or deleted without affecting the
+  main stack. Use infrastructure/deploy_dashboard.py to populate the parameters
+  from a deployed main stack.
+
+Parameters:
+  MainStackName:
+    Type: String
+    Default: ssm-pca-stack
+    Description: >-
+      Name of the deployed main stack. Used only to name/title the dashboard.
+
+  StateMachineArn:
+    Type: String
+    Description: >-
+      Full ARN of the certificate workflow Step Functions state machine
+      (e.g. arn:aws:states:REGION:ACCOUNT:stateMachine:STACK-CertificateWorkflow).
+
+  DynamoDBTableName:
+    Type: String
+    Description: Name of the certificates DynamoDB table (e.g. STACK-certificates).
+
+  SNSTopicName:
+    Type: String
+    Default: FailedCertRotationTopic
+    Description: Name of the SNS topic used for failed certificate rotation notifications.
+
+  PCAArn:
+    Type: String
+    Description: ARN of the ACM Private CA (the PCA-ARN output of the main stack).
+
+  CertCheckTriggerFunctionName:
+    Type: String
+    Default: CertCheck-Trigger
+    Description: Name of the certificate check / trigger Lambda function.
+
+  CertCSRFunctionName:
+    Type: String
+    Default: CertCSR
+    Description: Name of the CSR generation Lambda function.
+
+  CertCSRStatusFunctionName:
+    Type: String
+    Default: CertCSRStatus
+    Description: Name of the CSR status Lambda function.
+
+  CertIssueFunctionName:
+    Type: String
+    Default: CertIssue
+    Description: Name of the certificate issuance Lambda function.
+
+  CertDeployFunctionName:
+    Type: String
+    Default: CertDeploy
+    Description: Name of the certificate deployment Lambda function.
+
+  CRLProcessorFunctionName:
+    Type: String
+    Default: CRLProcessor
+    Description: Name of the CRL processor Lambda function.
+
+Resources:
+  CertificateAutomationDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${MainStackName}-certificate-automation'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "text",
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 2,
+              "properties": {
+                "markdown": "# Certificate Automation\nCertificate issuance, workflow executions, and errors across Lambda, Step Functions, ACM PCA, DynamoDB, and SNS. Metrics are AWS service metrics"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 2,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "title": "Step Functions - Execution Outcomes",
+                "region": "${AWS::Region}",
+                "view": "singleValue",
+                "stacked": false,
+                "metrics": [
+                  [
+                    "AWS/States",
+                    "ExecutionsStarted",
+                    "StateMachineArn",
+                    "${StateMachineArn}",
+                    {
+                      "stat": "Sum",
+                      "label": "Started"
+                    }
+                  ],
+                  [
+                    "AWS/States",
+                    "ExecutionsSucceeded",
+                    "StateMachineArn",
+                    "${StateMachineArn}",
+                    {
+                      "stat": "Sum",
+                      "label": "Succeeded"
+                    }
+                  ],
+                  [
+                    "AWS/States",
+                    "ExecutionsFailed",
+                    "StateMachineArn",
+                    "${StateMachineArn}",
+                    {
+                      "stat": "Sum",
+                      "label": "Failed"
+                    }
+                  ],
+                  [
+                    "AWS/States",
+                    "ExecutionsAborted",
+                    "StateMachineArn",
+                    "${StateMachineArn}",
+                    {
+                      "stat": "Sum",
+                      "label": "Aborted"
+                    }
+                  ],
+                  [
+                    "AWS/States",
+                    "ExecutionsTimedOut",
+                    "StateMachineArn",
+                    "${StateMachineArn}",
+                    {
+                      "stat": "Sum",
+                      "label": "TimedOut"
+                    }
+                  ]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 6,
+              "y": 2,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "title": "Certificates Issued (proxies)",
+                "region": "${AWS::Region}",
+                "view": "singleValue",
+                "stacked": false,
+                "metrics": [
+                  [
+                    "AWS/ACMPCA",
+                    "SuccessCount",
+                    "CertificateAuthorityArn",
+                    "${PCAArn}",
+                    {
+                      "stat": "Sum",
+                      "label": "PCA SuccessCount"
+                    }
+                  ],
+                  [
+                    "AWS/States",
+                    "ExecutionsSucceeded",
+                    "StateMachineArn",
+                    "${StateMachineArn}",
+                    {
+                      "stat": "Sum",
+                      "label": "Workflow Succeeded"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Invocations",
+                    "FunctionName",
+                    "${CertIssueFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "CertIssue Invocations"
+                    }
+                  ]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 2,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "title": "ACM PCA - Issuance Latency / Failures",
+                "region": "${AWS::Region}",
+                "view": "singleValue",
+                "metrics": [
+                  [
+                    "AWS/ACMPCA",
+                    "Time",
+                    "CertificateAuthorityArn",
+                    "${PCAArn}",
+                    {
+                      "stat": "Average",
+                      "label": "Issuance Time (avg)"
+                    }
+                  ],
+                  [
+                    "AWS/ACMPCA",
+                    "FailureCount",
+                    "CertificateAuthorityArn",
+                    "${PCAArn}",
+                    {
+                      "stat": "Sum",
+                      "label": "FailureCount"
+                    }
+                  ]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 18,
+              "y": 2,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "title": "Step Functions - Execution Duration",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "metrics": [
+                  [
+                    "AWS/States",
+                    "ExecutionTime",
+                    "StateMachineArn",
+                    "${StateMachineArn}",
+                    {
+                      "stat": "Average",
+                      "label": "Avg"
+                    }
+                  ],
+                  [
+                    "AWS/States",
+                    "ExecutionTime",
+                    "StateMachineArn",
+                    "${StateMachineArn}",
+                    {
+                      "stat": "Maximum",
+                      "label": "Max"
+                    }
+                  ]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 8,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "title": "Lambda - Errors",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": false,
+                "metrics": [
+                  [
+                    "AWS/Lambda",
+                    "Errors",
+                    "FunctionName",
+                    "${CertCheckTriggerFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CertCheckTriggerFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Errors",
+                    "FunctionName",
+                    "${CertCSRFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CertCSRFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Errors",
+                    "FunctionName",
+                    "${CertCSRStatusFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CertCSRStatusFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Errors",
+                    "FunctionName",
+                    "${CertIssueFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CertIssueFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Errors",
+                    "FunctionName",
+                    "${CertDeployFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CertDeployFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Errors",
+                    "FunctionName",
+                    "${CRLProcessorFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CRLProcessorFunctionName}"
+                    }
+                  ]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 6,
+              "y": 8,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "title": "Lambda - Invocations",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": false,
+                "metrics": [
+                  [
+                    "AWS/Lambda",
+                    "Invocations",
+                    "FunctionName",
+                    "${CertCheckTriggerFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CertCheckTriggerFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Invocations",
+                    "FunctionName",
+                    "${CertCSRFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CertCSRFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Invocations",
+                    "FunctionName",
+                    "${CertCSRStatusFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CertCSRStatusFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Invocations",
+                    "FunctionName",
+                    "${CertIssueFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CertIssueFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Invocations",
+                    "FunctionName",
+                    "${CertDeployFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CertDeployFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Invocations",
+                    "FunctionName",
+                    "${CRLProcessorFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CRLProcessorFunctionName}"
+                    }
+                  ]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 8,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "title": "Lambda - Duration (avg)",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": false,
+                "metrics": [
+                  [
+                    "AWS/Lambda",
+                    "Duration",
+                    "FunctionName",
+                    "${CertCheckTriggerFunctionName}",
+                    {
+                      "stat": "Average",
+                      "label": "${CertCheckTriggerFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Duration",
+                    "FunctionName",
+                    "${CertCSRFunctionName}",
+                    {
+                      "stat": "Average",
+                      "label": "${CertCSRFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Duration",
+                    "FunctionName",
+                    "${CertCSRStatusFunctionName}",
+                    {
+                      "stat": "Average",
+                      "label": "${CertCSRStatusFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Duration",
+                    "FunctionName",
+                    "${CertIssueFunctionName}",
+                    {
+                      "stat": "Average",
+                      "label": "${CertIssueFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Duration",
+                    "FunctionName",
+                    "${CertDeployFunctionName}",
+                    {
+                      "stat": "Average",
+                      "label": "${CertDeployFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Duration",
+                    "FunctionName",
+                    "${CRLProcessorFunctionName}",
+                    {
+                      "stat": "Average",
+                      "label": "${CRLProcessorFunctionName}"
+                    }
+                  ]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 18,
+              "y": 8,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "title": "Lambda - Throttles",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": false,
+                "metrics": [
+                  [
+                    "AWS/Lambda",
+                    "Throttles",
+                    "FunctionName",
+                    "${CertCheckTriggerFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CertCheckTriggerFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Throttles",
+                    "FunctionName",
+                    "${CertCSRFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CertCSRFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Throttles",
+                    "FunctionName",
+                    "${CertCSRStatusFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CertCSRStatusFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Throttles",
+                    "FunctionName",
+                    "${CertIssueFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CertIssueFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Throttles",
+                    "FunctionName",
+                    "${CertDeployFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CertDeployFunctionName}"
+                    }
+                  ],
+                  [
+                    "AWS/Lambda",
+                    "Throttles",
+                    "FunctionName",
+                    "${CRLProcessorFunctionName}",
+                    {
+                      "stat": "Sum",
+                      "label": "${CRLProcessorFunctionName}"
+                    }
+                  ]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 14,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "title": "DynamoDB - Consumed Capacity & Throttles",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": false,
+                "metrics": [
+                  [
+                    "AWS/DynamoDB",
+                    "ConsumedReadCapacityUnits",
+                    "TableName",
+                    "${DynamoDBTableName}",
+                    {
+                      "stat": "Sum",
+                      "label": "Read CU"
+                    }
+                  ],
+                  [
+                    "AWS/DynamoDB",
+                    "ConsumedWriteCapacityUnits",
+                    "TableName",
+                    "${DynamoDBTableName}",
+                    {
+                      "stat": "Sum",
+                      "label": "Write CU"
+                    }
+                  ],
+                  [
+                    "AWS/DynamoDB",
+                    "ThrottledRequests",
+                    "TableName",
+                    "${DynamoDBTableName}",
+                    {
+                      "stat": "Sum",
+                      "label": "Throttled"
+                    }
+                  ],
+                  [
+                    "AWS/DynamoDB",
+                    "SystemErrors",
+                    "TableName",
+                    "${DynamoDBTableName}",
+                    {
+                      "stat": "Sum",
+                      "label": "SystemErrors"
+                    }
+                  ],
+                  [
+                    "AWS/DynamoDB",
+                    "UserErrors",
+                    "TableName",
+                    "${DynamoDBTableName}",
+                    {
+                      "stat": "Sum",
+                      "label": "UserErrors"
+                    }
+                  ]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 6,
+              "y": 14,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "title": "SNS - Failure Notifications",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": false,
+                "metrics": [
+                  [
+                    "AWS/SNS",
+                    "NumberOfMessagesPublished",
+                    "TopicName",
+                    "${SNSTopicName}",
+                    {
+                      "stat": "Sum",
+                      "label": "Published"
+                    }
+                  ],
+                  [
+                    "AWS/SNS",
+                    "NumberOfNotificationsDelivered",
+                    "TopicName",
+                    "${SNSTopicName}",
+                    {
+                      "stat": "Sum",
+                      "label": "Delivered"
+                    }
+                  ],
+                  [
+                    "AWS/SNS",
+                    "NumberOfNotificationsFailed",
+                    "TopicName",
+                    "${SNSTopicName}",
+                    {
+                      "stat": "Sum",
+                      "label": "Failed"
+                    }
+                  ]
+                ],
+                "period": 300
+              }
+            }
+          ]
+        }
+
+Outputs:
+  DashboardName:
+    Description: Name of the created CloudWatch dashboard.
+    Value: !Sub '${MainStackName}-certificate-automation'
+  DashboardURL:
+    Description: Console URL for the created dashboard.
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${MainStackName}-certificate-automation'
