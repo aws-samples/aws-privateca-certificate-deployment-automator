@@ -4,24 +4,38 @@ set -e
 # Build Lambda layer for x86_64
 echo "Building Lambda layer for cryptography..."
 
-# Detect container runtime (Docker or Podman)
+# Detect container runtime (Docker, Finch, or Podman).
+# Set CONTAINER_RUNTIME to force a specific runtime, e.g.:
+#   CONTAINER_RUNTIME=finch ./build.sh
+# When unset, the script auto-detects in order: docker, finch, podman.
 CONTAINER_CMD=""
 ENTRYPOINT_OVERRIDE=""
 
-if command -v docker &> /dev/null; then
+if [ -n "$CONTAINER_RUNTIME" ]; then
+    if ! command -v "$CONTAINER_RUNTIME" &> /dev/null; then
+        echo "Error: CONTAINER_RUNTIME is set to '$CONTAINER_RUNTIME' but it is not installed or available in PATH"
+        exit 1
+    fi
+    echo "Using container runtime from CONTAINER_RUNTIME: $CONTAINER_RUNTIME"
+    CONTAINER_CMD="$CONTAINER_RUNTIME"
+elif command -v docker &> /dev/null; then
     echo "Docker detected - using Docker commands"
     CONTAINER_CMD="docker"
-    # Docker doesn't need entrypoint override for this use case
-    ENTRYPOINT_OVERRIDE=""
+elif command -v finch &> /dev/null; then
+    echo "Finch detected - using Finch commands"
+    CONTAINER_CMD="finch"
 elif command -v podman &> /dev/null; then
     echo "Podman detected - using Podman commands"
     CONTAINER_CMD="podman"
-    # Podman needs entrypoint override for AWS Lambda base images
-    ENTRYPOINT_OVERRIDE="--entrypoint="
 else
-    echo "Error: Neither Docker nor Podman is installed or available in PATH"
-    echo "Please install Docker or Podman to build the Lambda layer"
+    echo "Error: No supported container runtime (docker, finch, or podman) is installed or available in PATH"
+    echo "Please install Docker, Finch, or Podman to build the Lambda layer"
     exit 1
+fi
+
+# Podman needs an entrypoint override for AWS Lambda base images; docker/finch do not.
+if [ "$CONTAINER_CMD" = "podman" ]; then
+    ENTRYPOINT_OVERRIDE="--entrypoint="
 fi
 
 # Create output directory in the layer directory
@@ -36,6 +50,12 @@ echo "Extracting layer from container..."
 if [ "$CONTAINER_CMD" = "docker" ]; then
     # Docker command (no entrypoint override needed)
     ${CONTAINER_CMD} run --platform linux/amd64 --rm -v $(pwd)/output:/output lambda-layer-x86 cp /tmp/lambda-layer.zip /output/
+elif [ "$CONTAINER_CMD" = "finch" ]; then
+    ${CONTAINER_CMD}  run --platform linux/amd64 --rm \
+      -v $(pwd)/output:/output \
+      --entrypoint cp \
+      lambda-layer-x86 \
+      /tmp/lambda-layer.zip /output/
 else
     # Podman command (with entrypoint override)
     ${CONTAINER_CMD} run --platform linux/amd64 --rm ${ENTRYPOINT_OVERRIDE} -v $(pwd)/output:/output lambda-layer-x86 cp /tmp/lambda-layer.zip /output/
@@ -50,7 +70,7 @@ echo "Cleaning up temporary files..."
 rm -rf output
 
 echo ""
-echo "Layer build complete!"
+echo "Layer build complete"
 echo "Container runtime used: ${CONTAINER_CMD}"
 echo "Layer file: $(ls -lh ../../lambda-layer.zip | awk '{print $5, $9}')"
 echo ""

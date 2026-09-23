@@ -27,7 +27,7 @@ The Step Functions workflow provides enterprise-grade error handling, intelligen
 
 
 ## Certificate Revocation
-Use the following command to revole a certificate, replacing the placeholders with your own information.
+Use the following command to revoke a certificate, replacing the placeholders with your own information.
 
 `aws acm-pca revoke-certificate --certificate-authority-arn <certificate-authority-arn> --certificate-serial <certificate-serial> --revocation-reason <revocation-reason>`
 

@@ -1,5 +1,5 @@
 # Multi-architecture Lambda layer build for cryptography
-FROM public.ecr.aws/lambda/python:3.12
+FROM public.ecr.aws/lambda/python:3.14
 
 # Install build dependencies
 RUN dnf update -y && \

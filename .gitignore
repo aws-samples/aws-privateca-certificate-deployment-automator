@@ -285,3 +285,9 @@ deployment-logs/
 execution-history/
 test-certificates/
 packaged.yaml
+lambda-layer.zip
+.kiro/specs/python-314-upgrade/.config.kiro
+.kiro/specs/python-314-upgrade/design.md
+.kiro/specs/python-314-upgrade/requirements.md
+.kiro/specs/python-314-upgrade/tasks.md
+.kiro/specs/python-314-upgrade/tasks.meta.json
