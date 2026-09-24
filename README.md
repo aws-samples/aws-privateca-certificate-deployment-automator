@@ -32,7 +32,7 @@ The solution uses AWS Step Functions to orchestrate an asynchronous certificate 
 
 The Step Functions workflow provides enterprise-grade error handling, intelligent retry logic, and comprehensive monitoring. Certificate failures trigger consolidated Amazon SNS notifications with detailed context to an email address specified during deployment.
 
-![Diagram](./diagram.png)
+![Diagram](images/diagram.png)
 
 
 ## Certificate Revocation
@@ -47,7 +47,7 @@ aws acm-pca revoke-certificate \
 
 Once revoked, AWS Private Certificate Authority will generate a CRL file within 30 minutes and upload it to the CRL S3 bucket that was created by the CloudFormation. From there, the CRLProcessor Lambda function will receive a notification of the new CRL file and pass it to the IAM Roles Anywhere API.
 
-![Diagram](./crl-diagram.png)
+![Diagram](images/crl-diagram.png)
 
 ## Project Structure
 ```
@@ -119,7 +119,7 @@ aws cloudformation deploy \
 ### Configure certificate hosts
 After deployment, add certificate entries to the DynamoDB table for hosts that require certificate management. These will be the node ID as displayed in AWS Systems Manager, such as displayed here:
 
-![SSM-screenshot.png](SSM-screenshot.png)
+![SSM-screenshot.png](images/SSM-screenshot.png)
 
 ```bash
 aws dynamodb put-item \
@@ -233,7 +233,7 @@ aws cloudformation update-stack \
 ## Observability
 The project does not include any custom CloudWatch metrics, dashboards, alarms, or other observability components; however, an optional CloudFormation stack may be deployed that includes critical and existing service metrics for the components used. 
 
-![dashboard.png](dashboard.png)
+![dashboard.png](images/dashboard.png)
 
 Our recommendation is to deploy this stack. A helper script has been added to this project that will extract the parameters from the solution and populate the dashboard with the correct metrics:
 
