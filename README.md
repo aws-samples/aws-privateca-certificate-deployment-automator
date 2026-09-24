@@ -10,7 +10,11 @@ Common use cases include:
 * Integration into AWS observability tools, including Amazon CloudWatch and CloudWatch Logs
 * Obtaining AWS SigV4 credentials for use of Amazon Bedrock provided models
 
-This project is ready for deployment as-is without customization.
+Note that this project manages certificate rotation, issuance, and revocation only. Deployment and configuration of the `aws_credential_helper` and management of IAM Roles is managed separately. An AWS Private Certificate Authority is deployed as well, though the subject, common name, organization, and other details will require customization. By default the CA deploys with these details, which you must adjust from the `cf_template.yaml` file prior to deployment.
+
+| Subject | Common name (CN) | State or province name | Organization (O) | Organization unit (OU) | Country name (C) | Locality name |
+| -  | -  | -  | -  | -  | -  | -  |
+| C=US, O=Example Corp, CN=pca.example.com | pca.example.com | - | Example Corp | - | US | - |
 
 ## Architecture
 The solution uses AWS Step Functions to orchestrate an asynchronous certificate lifecycle across multiple AWS services, optimized for enterprise scale:
@@ -132,8 +136,8 @@ aws dynamodb put-item \
 ### Test the deployment
 Run the included test suite to validate your deployment:
 
-```
-bash./tests/test-failure-scenarios.sh <stack-name>
+```bash
+./tests/test-failure-scenarios.sh <stack-name>
 ```
 
 ## Usage
