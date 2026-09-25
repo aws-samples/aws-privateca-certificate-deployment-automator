@@ -4,7 +4,7 @@ Description: >-
   Automator. This stack is fully standalone: it references the main stack's
   resources only through parameters passed at deploy time (no Fn::ImportValue,
   no exports), so it can be created, updated, or deleted without affecting the
-  main stack. Use infrastructure/deploy_dashboard.py to populate the parameters
+  main stack. Use infrastructure/deploy_dashboard.sh to populate the parameters
   from a deployed main stack.
 
 Parameters:
