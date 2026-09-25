@@ -3,6 +3,19 @@
 ## Description
 This project provides an enterprise-grade architectural pattern and sample code for automating the certificate lifecycle from AWS Private Certificate Authority (PCA) using AWS Step Functions and Systems Manager. This solution is designed to handle large-scale certificate management (10,000+ certificates) with high performance, reliability, and cost efficiency through modern serverless orchestration.
 
+For customers who operate workloads on-premises or in other clouds, using IAM Roles Anywhere provides a highly secure mechanism to vend AWS credentials with restricted scope for machine or operator use, while removing the necessity for static API keys. This approach uses PKI infrastructure with short-lived certificates which are used to exchange for ephemeral credentials. 
+
+Common use cases include:
+* Applications on-premises that require access to object storage on Amazon S3
+* Integration into AWS observability tools, including Amazon CloudWatch and CloudWatch Logs
+* Obtaining AWS SigV4 credentials for use of Amazon Bedrock provided models
+
+Note that this project manages certificate rotation, issuance, and revocation only. Deployment and configuration of the `aws_credential_helper` and management of IAM Roles is managed separately. An AWS Private Certificate Authority is deployed as well, though the subject, common name, organization, and other details will require customization. By default the CA deploys with these details, which you must adjust from the `cf_template.yaml` file prior to deployment.
+
+| Subject | Common name (CN) | State or province name | Organization (O) | Organization unit (OU) | Country name (C) | Locality name |
+| -  | -  | -  | -  | -  | -  | -  |
+| C=US, O=Example Corp, CN=pca.example.com | pca.example.com | - | Example Corp | - | US | - |
+
 ## Architecture
 The solution uses AWS Step Functions to orchestrate an asynchronous certificate lifecycle across multiple AWS services, optimized for enterprise scale:
 
@@ -23,17 +36,22 @@ The solution uses AWS Step Functions to orchestrate an asynchronous certificate 
 
 The Step Functions workflow provides enterprise-grade error handling, intelligent retry logic, and comprehensive monitoring. Certificate failures trigger consolidated Amazon SNS notifications with detailed context to an email address specified during deployment.
 
-![Diagram](./diagram.png)
+![Diagram](images/diagram.png)
 
 
 ## Certificate Revocation
 Use the following command to revoke a certificate, replacing the placeholders with your own information.
 
-`aws acm-pca revoke-certificate --certificate-authority-arn <certificate-authority-arn> --certificate-serial <certificate-serial> --revocation-reason <revocation-reason>`
+```bash
+aws acm-pca revoke-certificate \
+  --certificate-authority-arn <certificate-authority-arn> \
+  --certificate-serial <certificate-serial> \
+  --revocation-reason <revocation-reason>
+```
 
 Once revoked, AWS Private Certificate Authority will generate a CRL file within 30 minutes and upload it to the CRL S3 bucket that was created by the CloudFormation. From there, the CRLProcessor Lambda function will receive a notification of the new CRL file and pass it to the IAM Roles Anywhere API.
 
-![Diagram](./crl-diagram.png)
+![Diagram](images/crl-diagram.png)
 
 ## Project Structure
 ```
@@ -64,16 +82,27 @@ aws-privateca-certificate-deployment-automator/
 - Docker or Podman (for building the Lambda layer)
 
 ### Clone the repository
-`git clone https://github.com/aws-samples/aws-privateca-certificate-deployment-automator.git`
+```bash
+git clone https://github.com/aws-samples/aws-privateca-certificate-deployment-automator.git
+```
 
 ### Navigate to the cloned repository
-`cd aws-privateca-certificate-deployment-automator`
+```bash
+cd aws-privateca-certificate-deployment-automator
+```
 
 ### Build the Lambda layer
-`cd shared/layer && ./build.sh && cd ../..`
+```bash
+cd shared/layer && ./build.sh && cd ../..
+```
 
 ### Package the CloudFormation template
-`aws cloudformation package --template-file infrastructure/cf_template.yaml --s3-bucket <your-deployment-bucket> --output-template-file infrastructure/packaged.yaml`
+```bash
+aws cloudformation package \
+  --template-file infrastructure/cf_template.yaml \
+  --s3-bucket <your-deployment-bucket> \
+  --output-template-file infrastructure/packaged.yaml
+```
 
 ### Deploy the CloudFormation stack
 ```bash
@@ -92,20 +121,24 @@ aws cloudformation deploy \
 ```
 
 ### Configure certificate hosts
-After deployment, add certificate entries to the DynamoDB table for hosts that require certificate management:
+After deployment, add certificate entries to the DynamoDB table for hosts that require certificate management. These will be the node ID as displayed in AWS Systems Manager, such as displayed here:
+
+![SSM-screenshot.png](images/SSM-screenshot.png)
 
 ```bash
 aws dynamodb put-item \
   --table-name <stack-name>-certificates \
   --item '{
-    "hostID": {"S": "i-1234567890abcdef0"}
+    "hostID": {"S": "<replace with node ID>"}
   }'
 ```
 
 ### Test the deployment
 Run the included test suite to validate your deployment:
 
-`./tests/test-failure-scenarios.sh <stack-name>`
+```bash
+./tests/test-failure-scenarios.sh <stack-name>
+```
 
 ## Usage
 ### Automated Operation
@@ -119,14 +152,12 @@ The Step Functions workflow runs twice daily (3:15 AM and 3:15 PM UTC) to automa
 - Send notifications for any failures
 
 ### Manual Execution
-Trigger the workflow manually when needed:
+Trigger the workflow manually when needed by executing the AWS Step Functions State machine created by the CloudFormation template.
 
 ```bash
 aws stepfunctions start-execution \
-  --state-machine-arn arn:aws:states:us-east-1:123456789012:stateMachine:ssm-pca-stack-CertificateWorkflow \
-  --name manual-execution-20250710143022
+  --state-machine-arn <replace with ARN of your state machine>
 ```
-
 
 ## Configuration
 
@@ -158,8 +189,9 @@ Override default paths for specific hosts by adding attributes to DynamoDB entri
 }
 ```
 
+## Upgrading to the Latest Release
 
-## Layer Version Management
+### Layer Version Management
 When updating the Lambda layer (e.g., fixing bugs or adding features):
 
 1. **Make your code changes** in `shared/layer/`
@@ -175,7 +207,56 @@ When updating the Lambda layer (e.g., fixing bugs or adding features):
    ```
 3. **Version numbering**: Use semantic versioning (1.0.1 for patches, 1.1.0 for features, 2.0.0 for breaking changes)
 
+### CloudFormation stack
+The CloudFormation stack is idempotent and may be updated following creation of a new Lambda layer or changes to the rest of the solution. First, repackage the content as with the initial deployment:
 
+```bash
+aws cloudformation package \
+  --template-file infrastructure/cf_template.yaml \
+  --s3-bucket <your-deployment-bucket> \
+  --output-template-file infrastructure/packaged.yaml
+```
+
+Note that your stack update command, if using the CLI, should include your stack parameters, such as in this example:
+
+```bash
+aws cloudformation update-stack \
+  --template-body file://infrastructure/packaged.yaml \
+  --stack-name ssm-pca-stack \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameters \
+    ParameterKey=CertPath,ParameterValue=/tmp \
+    ParameterKey=CACertPath,ParameterValue=/tmp \
+    ParameterKey=KeyPath,ParameterValue=/tmp \
+    ParameterKey=AWSSigningHelperPath,ParameterValue=/root \
+    ParameterKey=SNSSubscriberEmail,ParameterValue=you@example.com \
+    ParameterKey=RenewalThresholdDays,ParameterValue=2 \
+    ParameterKey=LayerVersion,ParameterValue=1.0.1
+```
+
+## Observability
+The project does not include any custom CloudWatch metrics, dashboards, alarms, or other observability components; however, an optional CloudFormation stack may be deployed that includes critical and existing service metrics for the components used. 
+
+![dashboard.png](images/dashboard.png)
+
+Our recommendation is to deploy this stack. A helper script has been added to this project that will extract the parameters from the solution and populate the dashboard with the correct metrics:
+
+```bash
+infrastructure/deploy_dashboard.sh ssm-pca-stack --deploy
+```
+
+Then perform these additional steps as part of your operational onboarding:
+
+* Create CloudWatch alarms for these metrics:
+  * Step Functions failed, aborted, and timed-out events
+  * SNS notification failures
+* Adjust the CloudWatch log group retention period for the following log groups (as they default to never expire):
+  * `/aws/lambda/CRLProcessor`
+  * `/aws/lambda/CertCSR`
+  * `/aws/lambda/CertCSRStatus`
+  * `/aws/lambda/CertCheck-Trigger`
+  * `/aws/lambda/CertDeploy`
+  * `/aws/lambda/CertIssue`
 
 # License
 
@@ -190,7 +271,3 @@ This project uses the following libraries in the Lambda layer:
 - [cffi](https://cffi.readthedocs.io/en/latest/), licensed under the MIT License. See the [PyPi page](https://pypi.org/project/cffi/) and the [GitHub repository](https://github.com/cffi/cffi) for more information.
 
 - [pycparser](https://github.com/eliben/pycparser), licensed under the BSD License. See the [PyPi page](https://pypi.org/project/pycparser/) and the [GitHub repository](https://github.com/eliben/pycparser) for more information.
-
-
-
-
